@@ -110,8 +110,28 @@ fn parse_and_log(
                     continue;
                 };
 
-                let doc = rerun::TextDocument::new(entry.name.clone())
-                    .with_media_type(rerun::MediaType::TEXT);
+                let info = match entry.entry_type.as_str() {
+                    "string" => {
+                        let data = String::from_utf8_lossy(&data);
+                        let data = data.trim_start_matches('\"').trim_end_matches('\"');
+                        data.to_string()
+                    }
+                    "int64" => {
+                        let data = i64::from_le_bytes(data.try_into().unwrap());
+                        format!("{data}")
+                    }
+                    "float" => {
+                        let data = f32::from_le_bytes(data.try_into().unwrap());
+                        format!("{data}")
+                    }
+                    "double" => {
+                        let data = f64::from_le_bytes(data.try_into().unwrap());
+                        format!("{data}")
+                    }
+                    _ => unreachable!(),
+                };
+
+                let doc = rerun::TextDocument::new(info).with_media_type(rerun::MediaType::TEXT);
 
                 let entity_path = EntityPath::from_file_path(Path::new(&entry.name));
                 let chunk = Chunk::builder(entity_path)
