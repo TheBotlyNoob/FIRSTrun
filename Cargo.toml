@@ -1,0 +1,12 @@
+[package]
+name = "firstrun"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nom = "8.0.0"
+num = "0.4.3"
+rerun = { version = "0.22.1", features = ["native_viewer", "run"] }
+
+[build-dependencies]
+re_build_tools = "0.22.1"
