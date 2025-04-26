@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arc-slice = "0.1.0-alpha.2"
+bytemuck = "1.22.0"
 nom = "8.0.0"
 num = "0.4.3"
+rayon = "1.10.0"
+re_log = "0.23.0"
 rerun = { version = "0.22.1", features = ["native_viewer", "run"] }
 
 [build-dependencies]

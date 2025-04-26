@@ -287,6 +287,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-slice"
+version = "0.1.0-alpha.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "447141e26eeec3834c3f310587b64bb91f740231cd2a5f34010e4e64fe6fbfcc"
+dependencies = [
+ "bytes",
+ "either",
+]
+
+[[package]]
 name = "array-init"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2076,6 +2086,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "env_filter"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "186e05a59d4c50738528153b83b0b0194d3a29507dfec16eccd4b342903397d0"
+dependencies = [
+ "log",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2226,9 +2245,13 @@ dependencies = [
 name = "firstrun"
 version = "0.1.0"
 dependencies = [
+ "arc-slice",
+ "bytemuck",
  "nom",
  "num",
+ "rayon",
  "re_build_tools",
+ "re_log 0.23.0",
  "rerun",
 ]
 
@@ -5008,7 +5031,7 @@ dependencies = [
  "ehttp",
  "re_build_info",
  "re_build_tools",
- "re_log",
+ "re_log 0.22.1",
  "serde",
  "serde_json",
  "sha2",
@@ -5054,7 +5077,7 @@ checksum = "53e5a9c65130a285afabd6d260ab28772e777c80b13f1ad9690e7f88a470656f"
 dependencies = [
  "arrow",
  "itertools 0.13.0",
- "re_log",
+ "re_log 0.22.1",
  "re_tracing",
 ]
 
@@ -5070,7 +5093,7 @@ dependencies = [
  "re_context_menu",
  "re_data_ui",
  "re_entity_db",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_types",
@@ -5157,7 +5180,7 @@ dependencies = [
  "re_error",
  "re_format",
  "re_format_arrow",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_tuid",
@@ -5186,7 +5209,7 @@ dependencies = [
  "re_byte_size",
  "re_chunk",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_protos",
@@ -5229,7 +5252,7 @@ dependencies = [
  "re_data_source",
  "re_data_ui",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_types",
@@ -5250,7 +5273,7 @@ dependencies = [
  "nohash-hasher",
  "once_cell",
  "re_entity_db",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_smart_channel",
  "re_tracing",
@@ -5298,7 +5321,7 @@ dependencies = [
  "re_build_tools",
  "re_chunk",
  "re_crash_handler",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_smart_channel",
@@ -5322,7 +5345,7 @@ dependencies = [
  "rayon",
  "re_build_tools",
  "re_data_loader",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_smart_channel",
@@ -5350,7 +5373,7 @@ dependencies = [
  "re_chunk_store",
  "re_entity_db",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_renderer",
  "re_smart_channel",
@@ -5379,7 +5402,7 @@ dependencies = [
  "re_chunk",
  "re_chunk_store",
  "re_format_arrow",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_query",
@@ -5405,7 +5428,7 @@ dependencies = [
  "re_chunk_store",
  "re_format",
  "re_int_histogram",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_query",
@@ -5472,6 +5495,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "re_log"
+version = "0.23.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5486a9e9e82618811d84935f56a9be0ac7bd24a5ff3d01f374bc628d01aaea"
+dependencies = [
+ "env_filter",
+ "log",
+ "log-once",
+ "parking_lot",
+ "tracing",
+]
+
+[[package]]
 name = "re_log_encoding"
 version = "0.22.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5486,7 +5522,7 @@ dependencies = [
  "re_arrow2",
  "re_build_info",
  "re_chunk",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_protos",
  "re_smart_channel",
@@ -5526,7 +5562,7 @@ dependencies = [
  "re_build_info",
  "re_byte_size",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_string_interner",
  "re_tracing",
  "re_tuid",
@@ -5566,7 +5602,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_tracing",
  "smallvec",
  "sysinfo",
@@ -5627,7 +5663,7 @@ dependencies = [
  "re_chunk_store",
  "re_error",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_types_core",
@@ -5689,7 +5725,7 @@ dependencies = [
  "profiling",
  "re_build_tools",
  "re_error",
- "re_log",
+ "re_log 0.22.1",
  "re_math",
  "re_tracing",
  "re_video",
@@ -5728,7 +5764,7 @@ dependencies = [
  "re_byte_size",
  "re_chunk",
  "re_data_loader",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_memory",
@@ -5749,7 +5785,7 @@ dependencies = [
  "document-features",
  "rand 0.8.5",
  "re_build_info",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_smart_channel",
@@ -5773,7 +5809,7 @@ dependencies = [
  "re_data_ui",
  "re_entity_db",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_types",
@@ -5806,7 +5842,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b7f361fb581b99145dd9d7a19d1f5859fa66fd54923ace3074a0b63f7a684ab"
 dependencies = [
  "arrow",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_types_core",
  "thiserror 1.0.69",
@@ -5842,7 +5878,7 @@ dependencies = [
  "re_entity_db",
  "re_format",
  "re_int_histogram",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_types",
@@ -5863,7 +5899,7 @@ checksum = "d0bb55d18b9401b769ddab6ab88aca2b3d124ae7441c3b163eda829615c052a5"
 dependencies = [
  "puffin",
  "puffin_http",
- "re_log",
+ "re_log 0.22.1",
  "rfd",
  "wayland-sys",
 ]
@@ -5912,7 +5948,7 @@ dependencies = [
  "re_byte_size",
  "re_error",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_math",
  "re_tracing",
@@ -5946,7 +5982,7 @@ dependencies = [
  "re_build_tools",
  "re_case",
  "re_error",
- "re_log",
+ "re_log 0.22.1",
  "re_tracing",
  "rust-format",
  "serde",
@@ -5976,7 +6012,7 @@ dependencies = [
  "re_byte_size",
  "re_case",
  "re_error",
- "re_log",
+ "re_log 0.22.1",
  "re_string_interner",
  "re_tracing",
  "re_tuid",
@@ -6004,7 +6040,7 @@ dependencies = [
  "re_arrow_util",
  "re_entity_db",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "serde",
@@ -6035,7 +6071,7 @@ dependencies = [
  "poll-promise",
  "re_build_info",
  "re_build_tools",
- "re_log",
+ "re_log 0.22.1",
  "re_mp4",
  "re_rav1d",
  "re_tracing",
@@ -6059,7 +6095,7 @@ dependencies = [
  "nohash-hasher",
  "re_chunk_store",
  "re_entity_db",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_query",
  "re_renderer",
@@ -6107,7 +6143,7 @@ dependencies = [
  "re_dataframe",
  "re_error",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_renderer",
  "re_tracing",
@@ -6134,7 +6170,7 @@ dependencies = [
  "re_data_ui",
  "re_entity_db",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_query",
  "re_renderer",
@@ -6158,7 +6194,7 @@ dependencies = [
  "itertools 0.13.0",
  "re_data_ui",
  "re_entity_db",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_math",
  "re_query",
@@ -6196,7 +6232,7 @@ dependencies = [
  "re_entity_db",
  "re_error",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_math",
  "re_query",
@@ -6292,7 +6328,7 @@ dependencies = [
  "rayon",
  "re_chunk_store",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_query",
  "re_renderer",
@@ -6339,7 +6375,7 @@ dependencies = [
  "re_entity_db",
  "re_error",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_memory",
@@ -6418,7 +6454,7 @@ dependencies = [
  "re_data_source",
  "re_entity_db",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_math",
  "re_query",
@@ -6455,7 +6491,7 @@ dependencies = [
  "rayon",
  "re_context_menu",
  "re_entity_db",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_renderer",
  "re_tracing",
@@ -6483,7 +6519,7 @@ dependencies = [
  "re_chunk",
  "re_chunk_store",
  "re_entity_db",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_tracing",
  "re_types",
@@ -6503,7 +6539,7 @@ checksum = "d66c2d0ecb47f39ee1a4c5c70db52946bd31fe3446ea9ce38d071a03d06acec0"
 dependencies = [
  "document-features",
  "re_analytics",
- "re_log",
+ "re_log 0.22.1",
  "thiserror 1.0.69",
  "tiny_http",
 ]
@@ -6521,7 +6557,7 @@ dependencies = [
  "parking_lot",
  "polling",
  "re_format",
- "re_log",
+ "re_log 0.22.1",
  "re_log_types",
  "re_memory",
  "re_smart_channel",
@@ -6692,7 +6728,7 @@ dependencies = [
  "re_error",
  "re_format",
  "re_format_arrow",
- "re_log",
+ "re_log 0.22.1",
  "re_log_encoding",
  "re_log_types",
  "re_memory",

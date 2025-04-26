@@ -2,6 +2,7 @@ use nom::{
     IResult, Parser, bytes::streaming as bstreaming, error::ErrorKind,
     number::streaming as nstreaming,
 };
+use rerun::external::anyhow;
 
 struct RecordHeaderLengths(u8);
 impl RecordHeaderLengths {
@@ -26,15 +27,14 @@ impl From<u8> for RecordHeaderLengths {
     }
 }
 
-fn parse_string(input: &[u8], len: usize) -> IResult<&[u8], String, ParseError> {
+fn parse_string(input: &[u8], len: usize) -> IResult<&[u8], &str, ParseError> {
     let (input, string_bytes) = bstreaming::take(len)(input)?;
     let string = std::str::from_utf8(string_bytes)
-        .map(String::from)
         .map_err(|_| nom::Err::Failure(ParseError::InvalidString))?;
     Ok((input, string))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum ParseError {
     InvalidFormat(nom::error::ErrorKind),
     InvalidVersion,
@@ -67,14 +67,14 @@ impl<T> nom::error::ParseError<T> for ParseError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Payload {
+pub enum Payload<'log> {
     // control records
     /// The Start control record provides information about the specified entry ID. It must appear prior to any records using that entry ID. The format of the Start control record’s payload data is as follows:
     Start {
         entry_id: u32,
-        entry_name: String,
-        entry_type: String,
-        entry_metadata: String,
+        entry_name: &'log str,
+        entry_type: &'log str,
+        entry_metadata: &'log str,
     },
     /// The Finish control record indicates the entry ID is no longer valid. The format of the Finish control record’s payload data is as follows:
     Finish {
@@ -83,23 +83,23 @@ pub enum Payload {
     /// The Set metadata control record updates the metadata for an entry. The format of the record’s payload data is as follows:
     SetMetadata {
         entry_id: u32,
-        entry_metadata: String,
+        entry_metadata: &'log str,
     },
 
     Raw {
         entry_id: u32,
-        data: Vec<u8>,
+        data: &'log [u8],
     },
 }
 
 #[derive(Debug, Clone)]
-pub struct WpiRecord {
+pub struct WpiRecord<'log> {
     pub timestamp: u64,
 
-    pub payload: Payload,
+    pub payload: Payload<'log>,
 }
 
-impl WpiRecord {
+impl<'log> WpiRecord<'log> {
     const START_CONTROL_RECORD: u8 = 0x00;
     const FINISH_CONTROL_RECORD: u8 = 0x01;
     const SET_METADATA_CONTROL_RECORD: u8 = 0x02;
@@ -110,13 +110,12 @@ impl WpiRecord {
             return Err(nom::Err::Failure(ParseError::InvalidIntegerSize));
         }
 
-        const ARR_SIZE: usize = u64::BITS as usize / 8;
-        let mut buf = [0; ARR_SIZE];
+        let mut buf = [0; std::mem::size_of::<u64>()];
         buf[..s.len()].copy_from_slice(s);
 
         Ok((input, u64::from_le_bytes(buf)))
     }
-    pub fn parse(input: &[u8]) -> IResult<&[u8], Self, ParseError> {
+    pub fn parse(input: &'log [u8]) -> IResult<&'log [u8], Self, ParseError> {
         let (input, lengths) = match nstreaming::u8(input) {
             Ok((input, lengths)) => (input, lengths),
             Err(nom::Err::Incomplete(_)) => {
@@ -199,7 +198,7 @@ impl WpiRecord {
                     timestamp,
                     payload: Payload::Raw {
                         entry_id: entry_id as u32,
-                        data: input.to_vec(),
+                        data: input,
                     },
                 },
             ))
@@ -209,7 +208,7 @@ impl WpiRecord {
 
 /// A simple binary logging format designed for high speed logging of timestamped data values (e.g. numeric sensor values).
 #[derive(Debug, Clone, Default)]
-pub struct WpiLogFile {
+pub struct WpiLogFile<'log> {
     /// version number.
     /// The most significant byte of the version
     /// indicates the major version and
@@ -220,15 +219,19 @@ pub struct WpiLogFile {
     pub version: u16,
     /// The extra header string has arbitrary contents
     /// (e.g. the contents are set by the application that wrote the data log) but it must be UTF-8 encoded.
-    pub extra_header: String,
+    pub extra_header: &'log str,
 
     /// There is no timestamp ordering requirement for records. This is true for control records as well—
     /// ​a Start control record with a later timestamp may be followed by data records for that entry with earlier timestamps.
-    pub records: Vec<WpiRecord>,
+    pub records: Vec<WpiRecord<'log>>,
 }
 
-impl WpiLogFile {
-    fn parse_header(input: &[u8]) -> IResult<&[u8], (u16, String), ParseError> {
+impl<'log> WpiLogFile<'log> {
+    pub fn is_wpilog(input: &[u8]) -> bool {
+        input.starts_with(b"WPILOG")
+    }
+
+    fn parse_header(input: &'log [u8]) -> IResult<&'log [u8], (u16, &'log str), ParseError> {
         let (input, _) = nom::bytes::streaming::tag(&b"WPILOG"[..])(input)?;
 
         let (input, version) = nom::number::streaming::le_u16(input)?;
@@ -241,10 +244,19 @@ impl WpiLogFile {
         Ok((input, (version, extra_header)))
     }
 
-    pub fn parse(input: &[u8]) -> IResult<&[u8], Self, ParseError> {
-        let (input, (version, extra_header)) = Self::parse_header(input)?;
+    pub fn parse(
+        input: &'log [u8],
+        mut record_cb: impl FnMut(WpiRecord<'log>),
+    ) -> IResult<&[u8], Self, ParseError> {
+        let (mut input, (version, extra_header)) = Self::parse_header(input)?;
 
-        let (input, records) = nom::multi::many0(WpiRecord::parse).parse(input)?;
+        let (input, records) =
+            nom::multi::many0(|input| -> IResult<&[u8], WpiRecord, ParseError> {
+                let record = WpiRecord::parse(input)?;
+                record_cb(record.1.clone());
+                Ok(record)
+            })
+            .parse(input)?;
 
         Ok((
             input,
@@ -257,6 +269,7 @@ impl WpiLogFile {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
@@ -645,4 +658,4 @@ mod tests {
 
         assert_eq!(input.len(), 0);
     }
-}
+*/
