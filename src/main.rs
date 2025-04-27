@@ -17,9 +17,13 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 use anyhow::anyhow;
 use rerun::datatypes::Bool;
 use rerun::external::anyhow::Context;
-use rerun::external::re_log_types::{SetStoreInfo, StoreInfo, StoreSource};
+use rerun::external::re_log_types::{
+    BlueprintActivationCommand, SetStoreInfo, StoreInfo, StoreSource,
+};
 use rerun::log::LogMsg;
-use rerun::{ApplicationId, Loggable};
+use rerun::{
+    ApplicationId, Loggable, MediaType, RecordingProperties, Scalars, TextLog, TextLogLevel,
+};
 use rerun::{
     AsComponents, DataLoader as _, EntityPath, LoadedData, Scalar, TextDocument, TimePoint,
     Timeline,
@@ -45,6 +49,7 @@ fn main() -> anyhow::Result<std::process::ExitCode> {
     .map(std::process::ExitCode::from)
 }
 
+#[derive(Clone, Debug)]
 pub enum EntryValue<'log> {
     Raw(&'log [u8]),
     Boolean(bool),
@@ -62,8 +67,6 @@ pub enum EntryValue<'log> {
 
 impl<'log> EntryValue<'log> {
     pub fn parse(ty: &'log str, data: &'log [u8]) -> Result<Self, anyhow::Error> {
-        re_log::info!("FIRST BYTE: {:#?}", data.first());
-
         match ty {
             // the raw data
             "raw" => Ok(Self::Other(ty, data)),
@@ -127,8 +130,16 @@ impl<'log> EntryValue<'log> {
         }
     }
 
-    pub fn as_chunk(&self) -> Chunk {
-        todo!()
+    pub fn as_chunk(&self) -> Box<dyn AsComponents> {
+        match self {
+            Self::Int64(i) => Box::new(Scalars::single(*i as f64)),
+            Self::Float(i) => Box::new(Scalars::single(*i as f64)),
+            Self::Double(i) => Box::new(Scalars::single(*i)),
+            Self::String(s) => Box::new(TextLog::new(*s)),
+            _ => {
+                Box::new(TextDocument::new(format!("{:#?}", self)).with_media_type(MediaType::TEXT))
+            }
+        }
     }
 }
 
@@ -164,21 +175,6 @@ impl re_data_loader::DataLoader for WpiLogLoader {
     }
 }
 
-struct SkipLastIterator<I: Iterator>(Peekable<I>);
-impl<I: Iterator> Iterator for SkipLastIterator<I> {
-    type Item = I::Item;
-    fn next(&mut self) -> Option<Self::Item> {
-        let item = self.0.next();
-        self.0.peek().map(|_| item.unwrap())
-    }
-}
-trait SkipLast: Iterator + Sized {
-    fn skip_last(self) -> SkipLastIterator<Self> {
-        SkipLastIterator(self.peekable())
-    }
-}
-impl<I: Iterator> SkipLast for I {}
-
 struct EntryContext<'log> {
     id: u32,
     metadata: &'log str,
@@ -209,27 +205,6 @@ fn send_record<'log>(
                     name: entry_name,
                 },
             );
-
-            let _ = tx.send(LoadedData::LogMsg(
-                WpiLogLoader::name(&WpiLogLoader),
-                LogMsg::SetStoreInfo(SetStoreInfo {
-                    row_id: *RowId::new(),
-                    info: StoreInfo {
-                        // TODO: specify an application_id
-                        application_id: settings
-                            .application_id
-                            .clone()
-                            .unwrap_or_else(ApplicationId::random),
-                        store_id: settings
-                            .opened_store_id
-                            .clone()
-                            .unwrap_or_else(|| settings.store_id.clone()),
-                        cloned_from: None,
-                        store_source: StoreSource::Other("NetworkTables".into()),
-                        store_version: None,
-                    },
-                }),
-            ));
         }
         Payload::Raw { entry_id, data } => {
             let Some(ctx) = ctxs.get(&entry_id) else {
@@ -251,13 +226,9 @@ fn send_record<'log>(
 
             let entity_path = Path::new(&ctx.name);
 
-            let entity_path = entity_path
-                .components()
-                .skip(1)
-                .skip_last()
-                .collect::<PathBuf>();
+            let entity_path = entity_path.components().skip(1).collect::<PathBuf>();
 
-            let info = TextDocument::new(ctx.ty).with_media_type(rerun::MediaType::TEXT);
+            let info = ty.as_chunk();
 
             let entity_path = EntityPath::from_file_path(&entity_path);
             let chunk = Chunk::builder(entity_path)
@@ -267,7 +238,7 @@ fn send_record<'log>(
                         timeline,
                         TimeInt::from_nanos(NonMinI64::new(record.timestamp as i64).unwrap()),
                     )]),
-                    &info,
+                    &*info,
                 )
                 .build()
                 .unwrap();
@@ -295,7 +266,43 @@ fn parse_and_log(
         ));
     }
 
-    let timeline = Timeline::new_temporal("robotime");
+    let store_id = settings
+        .opened_store_id
+        .clone()
+        .unwrap_or_else(|| settings.store_id.clone());
+
+    let _ = tx.send(LoadedData::LogMsg(
+        WpiLogLoader::name(&WpiLogLoader),
+        LogMsg::SetStoreInfo(SetStoreInfo {
+            row_id: *RowId::new(),
+            info: StoreInfo {
+                // TODO: specify an application_id
+                application_id: settings
+                    .application_id
+                    .clone()
+                    .unwrap_or_else(ApplicationId::random),
+                store_id: store_id.clone(),
+                cloned_from: None,
+                store_source: StoreSource::Other("NetworkTables".into()),
+                store_version: None,
+            },
+        }),
+    ));
+
+    let properties = RecordingProperties::new().with_name("WpiLog");
+
+    let recording_props = Chunk::builder(EntityPath::recording_properties())
+        .with_archetype(RowId::new(), TimePoint::default(), &properties)
+        .build()?;
+
+    tx.send(LoadedData::Chunk(
+        WpiLogLoader::name(&WpiLogLoader),
+        store_id.clone(),
+        recording_props,
+    ))
+    .unwrap();
+
+    let timeline = Timeline::new("robotime", rerun::time::TimeType::TimestampNs);
 
     let contents = contents.to_vec();
     let tx = tx.clone();
@@ -315,6 +322,16 @@ fn parse_and_log(
                 re_log::error!("WPI DataLog file error: {e}");
                 re_data_loader::DataLoaderError::Other(e.into())
             })
+            .unwrap();
+
+            re_log::info!("finished parsing WpiLog");
+
+            tx.send(LoadedData::LogMsg(
+                WpiLogLoader::name(&WpiLogLoader),
+                LogMsg::BlueprintActivationCommand(BlueprintActivationCommand::make_active(
+                    store_id,
+                )),
+            ))
             .unwrap();
         })
         .with_context(|| "failed to spawn WpiLogFile parsing thread".to_owned())?;
