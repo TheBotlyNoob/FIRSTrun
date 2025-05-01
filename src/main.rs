@@ -12,9 +12,13 @@ pub mod wpilog;
 
 use std::iter::Peekable;
 use std::path::PathBuf;
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
+
+use conv::log_changes_to_chunks;
+use hashbrown::HashMap;
 
 use anyhow::anyhow;
+use log::{EntryLog, Key, Timestamp};
 use rerun::datatypes::Bool;
 use rerun::external::anyhow::Context;
 use rerun::external::re_log_types::{
@@ -25,15 +29,31 @@ use rerun::{
     ApplicationId, Loggable, MediaType, RecordingProperties, Scalars, TextLog, TextLogLevel,
 };
 use rerun::{
-    AsComponents, DataLoader as _, EntityPath, LoadedData, Scalar, TextDocument, TimePoint,
-    Timeline,
+    AsComponents, DataLoader as _, EntityPath, LoadedData, TextDocument, TimePoint, Timeline,
     external::{anyhow, re_build_info, re_data_loader, re_log, re_log_types::NonMinI64},
     log::{Chunk, RowId},
     time::TimeInt,
 };
+use tokio::runtime::Runtime;
+use values::EntryValue;
 use wpilog::parse::{Payload, WpiLogFile, WpiRecord};
 
+pub mod conv;
+pub mod log;
+pub mod nt;
+pub mod values;
+
 fn main() -> anyhow::Result<std::process::ExitCode> {
+    std::thread::Builder::new()
+        .name("networktables".into())
+        .spawn(|| {
+            let rt = Runtime::new().unwrap();
+            rt.block_on(
+                // Initialize the NetworkTables client
+                nt::begin_logging(),
+            );
+        })?;
+
     let main_thread_token = rerun::MainThreadToken::i_promise_i_am_on_the_main_thread();
     re_log::setup_logging();
 
@@ -47,100 +67,6 @@ fn main() -> anyhow::Result<std::process::ExitCode> {
         std::env::args(),
     )
     .map(std::process::ExitCode::from)
-}
-
-#[derive(Clone, Debug)]
-pub enum EntryValue<'log> {
-    Raw(&'log [u8]),
-    Boolean(bool),
-    Int64(i64),
-    Float(f32),
-    Double(f64),
-    String(&'log str),
-    BooleanArray(Vec<bool>),
-    Int64Array(&'log [pack1::I64LE]),
-    FloatArray(&'log [pack1::F32LE]),
-    DoubleArray(&'log [pack1::F64LE]),
-    StringArray(Vec<&'log str>),
-    Other(&'log str, &'log [u8]),
-}
-
-impl<'log> EntryValue<'log> {
-    pub fn parse(ty: &'log str, data: &'log [u8]) -> Result<Self, anyhow::Error> {
-        match ty {
-            // the raw data
-            "raw" => Ok(Self::Other(ty, data)),
-            // single byte (0=false, 1=true)
-            "boolean" => data
-                .first()
-                .map(|&b| Self::Boolean(b != 0))
-                .with_context(|| anyhow!("not enough data for boolean")),
-            // 8-byte (64-bit) signed value
-            "int64" => data
-                .get(0..8)
-                .with_context(|| anyhow!("not enough data for int64"))?
-                .try_into()
-                .map(|b| Self::Int64(i64::from_le_bytes(b)))
-                .map_err(Into::into),
-            // 4-byte (32-bit) IEEE-754 value
-            "float" => data
-                .get(0..4)
-                .with_context(|| anyhow!("not enough data for float"))?
-                .try_into()
-                .map(|b| Self::Float(f32::from_le_bytes(b)))
-                .map_err(Into::into),
-            // 8-byte (64-bit) IEEE-754 value
-            "double" => data
-                .get(0..8)
-                .with_context(|| anyhow!("not enough data for double"))?
-                .try_into()
-                .map(|b| Self::Double(f64::from_le_bytes(b)))
-                .map_err(Into::into),
-            // UTF-8 encoded string data
-            "string" => Ok(Self::String(std::str::from_utf8(data)?)),
-            // a single byte (0=false, 1=true) for each entry in the array[1]
-            "boolean[]" => Ok(Self::BooleanArray(
-                data.iter().map(|v| *v != 0).collect::<Vec<_>>(),
-            )),
-            // 8-byte (64-bit) signed value for each entry in the array[1]
-            "int64[]" => Ok(Self::Int64Array(bytemuck::try_cast_slice(data)?)),
-            // 4-byte (32-bit) value for each entry in the array[1]
-            "float[]" => Ok(Self::FloatArray(bytemuck::try_cast_slice(data)?)),
-            // 8-byte (64-bit) value for each entry in the array[1]
-            "double[]" => Ok(Self::DoubleArray(bytemuck::try_cast_slice(data)?)),
-            // Starts with a 4-byte (32-bit) array length. Each string is stored as a 4-byte (32-bit) length followed by the UTF-8 string data            _ => None,
-            "string[]" => {
-                let (mut real_input, arr_len) = nom::number::complete::le_u32::<_, ()>(data)?;
-                let mut vals = Vec::with_capacity(arr_len as usize);
-
-                for _ in 0..arr_len {
-                    let (input, str_len) = nom::number::complete::le_u32::<_, ()>(real_input)?;
-                    let (input, str_data) = nom::bytes::complete::take::<_, _, ()>(str_len)(input)?;
-                    real_input = input;
-                    let str_data = std::str::from_utf8(str_data)?;
-                    vals.push(str_data);
-                }
-
-                Ok(Self::StringArray(vals))
-            }
-            _ => Err(anyhow!(
-                "unknown data type {ty} (data length: {})",
-                data.len()
-            )),
-        }
-    }
-
-    pub fn as_chunk(&self) -> Box<dyn AsComponents> {
-        match self {
-            Self::Int64(i) => Box::new(Scalars::single(*i as f64)),
-            Self::Float(i) => Box::new(Scalars::single(*i as f64)),
-            Self::Double(i) => Box::new(Scalars::single(*i)),
-            Self::String(s) => Box::new(TextLog::new(*s)),
-            _ => {
-                Box::new(TextDocument::new(format!("{:#?}", self)).with_media_type(MediaType::TEXT))
-            }
-        }
-    }
 }
 
 /// A custom [`re_data_loader::DataLoader`] that logs the hash of file as a [`rerun::TextDocument`].
@@ -182,12 +108,10 @@ struct EntryContext<'log> {
     name: &'log str,
 }
 
-fn send_record<'log>(
-    settings: &rerun::external::re_data_loader::DataLoaderSettings,
-    tx: &std::sync::mpsc::Sender<re_data_loader::LoadedData>,
-    ctxs: &mut HashMap<u32, EntryContext<'log>>,
-    timeline: Timeline,
-    record: WpiRecord<'log>,
+fn fill_log<'file, 'log>(
+    ctxs: &mut HashMap<u32, EntryContext<'file>>,
+    nt_ctx: &'log mut EntryLog,
+    record: WpiRecord<'file>,
 ) {
     match record.payload {
         Payload::Start {
@@ -196,6 +120,12 @@ fn send_record<'log>(
             entry_type,
             entry_metadata,
         } => {
+            // strip the NT: prefix from the entry name
+            let mut entry_name = entry_name.strip_prefix("NT:").unwrap_or(entry_name);
+            // also strip any leading slashes
+            while let Some(new) = entry_name.strip_prefix('/') {
+                entry_name = new;
+            }
             ctxs.insert(
                 entry_id,
                 EntryContext {
@@ -212,43 +142,21 @@ fn send_record<'log>(
                 return;
             };
 
-            let ty = match EntryValue::parse(ctx.ty, data) {
+            let ty = match EntryValue::parse_from_wpilog(ctx.ty, data) {
                 Ok(ty) => ty,
                 Err(e) => {
                     re_log::warn!(
-                        "Failed to parse entry type {} (data length: {}): {e}",
+                        "Failed to parse entry type {} (data length: {}) (key: {}): {e}",
                         ctx.ty,
-                        data.len()
+                        data.len(),
+                        ctx.name,
                     );
                     return;
                 }
             };
 
-            let entity_path = Path::new(&ctx.name);
-
-            let entity_path = entity_path.components().skip(1).collect::<PathBuf>();
-
-            let info = ty.as_chunk();
-
-            let entity_path = EntityPath::from_file_path(&entity_path);
-            let chunk = Chunk::builder(entity_path)
-                .with_archetype(
-                    RowId::new(),
-                    TimePoint::from([(
-                        timeline,
-                        TimeInt::from_nanos(NonMinI64::new(record.timestamp as i64).unwrap()),
-                    )]),
-                    &*info,
-                )
-                .build()
-                .unwrap();
-            let store_id = settings
-                .opened_store_id
-                .clone()
-                .unwrap_or_else(|| settings.store_id.clone());
-            let data = LoadedData::Chunk(WpiLogLoader::name(&WpiLogLoader), store_id, chunk);
-
-            tx.send(data).ok();
+            let key = Key(ctx.name.into());
+            nt_ctx.add_entry(key.clone(), record.timestamp, ty).unwrap();
         }
         _ => (),
     }
@@ -302,7 +210,7 @@ fn parse_and_log(
     ))
     .unwrap();
 
-    let timeline = Timeline::new("robotime", rerun::time::TimeType::TimestampNs);
+    let timeline = Timeline::new_duration("robotime");
 
     let contents = contents.to_vec();
     let tx = tx.clone();
@@ -310,29 +218,41 @@ fn parse_and_log(
     std::thread::Builder::new()
         .name("WpiLogFile::parse".into())
         .spawn(move || {
-            let mut ctxs = HashMap::new();
-            let contents = contents;
             let tx = tx;
             let settings = settings;
+            let contents = contents;
 
-            let (_, _log) = WpiLogFile::parse(contents.as_slice(), |record| {
-                send_record(&settings, &tx, &mut ctxs, timeline, record)
-            })
-            .map_err(|e| {
-                re_log::error!("WPI DataLog file error: {e}");
-                re_data_loader::DataLoaderError::Other(e.into())
-            })
-            .unwrap();
+            {
+                let mut ctxs = HashMap::new();
+                let mut nt_ctx = EntryLog::new();
+
+                let (_, _log) = WpiLogFile::parse(contents.as_slice(), |record| {
+                    fill_log(&mut ctxs, &mut nt_ctx, record)
+                })
+                .map_err(|e| {
+                    re_log::error!("WPI DataLog file error: {e}");
+                    re_data_loader::DataLoaderError::Other(e.into())
+                })
+                .unwrap();
+
+                for chunk in log_changes_to_chunks(
+                    &settings.store_id,
+                    &settings
+                        .application_id
+                        .unwrap_or_else(ApplicationId::random),
+                    timeline,
+                    &mut nt_ctx,
+                ) {
+                    tx.send(LoadedData::Chunk(
+                        WpiLogLoader::name(&WpiLogLoader),
+                        settings.store_id.clone(),
+                        chunk,
+                    ))
+                    .unwrap();
+                }
+            }
 
             re_log::info!("finished parsing WpiLog");
-
-            tx.send(LoadedData::LogMsg(
-                WpiLogLoader::name(&WpiLogLoader),
-                LogMsg::BlueprintActivationCommand(BlueprintActivationCommand::make_active(
-                    store_id,
-                )),
-            ))
-            .unwrap();
         })
         .with_context(|| "failed to spawn WpiLogFile parsing thread".to_owned())?;
 

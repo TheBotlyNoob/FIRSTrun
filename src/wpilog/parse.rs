@@ -3,6 +3,9 @@ use nom::{
     number::streaming as nstreaming,
 };
 use rerun::external::anyhow;
+use uom::si::{time::microsecond, u64::Time};
+
+use crate::log;
 
 struct RecordHeaderLengths(u8);
 impl RecordHeaderLengths {
@@ -17,7 +20,7 @@ impl RecordHeaderLengths {
     }
 
     /// Returns the size of the timestamp field in bytes.
-    pub fn size_timestamp(&self) -> u8 {
+    pub const fn size_timestamp(&self) -> u8 {
         ((self.0 & 0b0111_0000) >> 4) + 1
     }
 }
@@ -34,7 +37,7 @@ fn parse_string(input: &[u8], len: usize) -> IResult<&[u8], &str, ParseError> {
     Ok((input, string))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
     InvalidFormat(nom::error::ErrorKind),
     InvalidVersion,
@@ -58,7 +61,7 @@ impl std::error::Error for ParseError {}
 
 impl<T> nom::error::ParseError<T> for ParseError {
     fn from_error_kind(_input: T, kind: nom::error::ErrorKind) -> Self {
-        ParseError::InvalidFormat(kind)
+        Self::InvalidFormat(kind)
     }
 
     fn append(_input: T, kind: nom::error::ErrorKind, _other: Self) -> Self {
@@ -94,7 +97,7 @@ pub enum Payload<'log> {
 
 #[derive(Debug, Clone)]
 pub struct WpiRecord<'log> {
-    pub timestamp: u64,
+    pub timestamp: log::Timestamp,
 
     pub payload: Payload<'log>,
 }
@@ -128,6 +131,7 @@ impl<'log> WpiRecord<'log> {
         let (input, entry_id) = Self::parse_dyn_int(input, lengths.size_entry_id())?;
         let (input, payload_len) = Self::parse_dyn_int(input, lengths.size_payload_len())?;
         let (input, timestamp) = Self::parse_dyn_int(input, lengths.size_timestamp())?;
+        let timestamp = log::Timestamp(Time::new::<microsecond>(timestamp));
 
         let (leftover, input) = bstreaming::take(payload_len)(input)?;
 

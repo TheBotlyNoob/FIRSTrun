@@ -5,10 +5,18 @@ edition = "2024"
 
 [dependencies]
 bytemuck = { version = "1.22.0", features = ["extern_crate_std"] }
+camino = "1.1.9"
+hashbrown = { version = "0.15.3", features = ["serde"] }
 nom = "8.0.0"
+nt_client = "0.3.0"
 num = "0.4.3"
 pack1 = { version = "1.0.0", features = ["bytemuck"] }
+replace_with = "0.1.7"
 rerun = { version = "0.23.1", features = ["native_viewer", "run"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+tokio = { version = "1.44.2", features = ["rt"] }
+uom = { version = "0.36.0", features = ["u64"] }
 
 [build-dependencies]
 re_build_tools = "0.23.1"
