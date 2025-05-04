@@ -191,7 +191,7 @@ fn parse_and_log(
                     .unwrap_or_else(ApplicationId::random),
                 store_id: store_id.clone(),
                 cloned_from: None,
-                store_source: StoreSource::Other("NetworkTables".into()),
+                store_source: StoreSource::Other("WpiLog".into()),
                 store_version: None,
             },
         }),

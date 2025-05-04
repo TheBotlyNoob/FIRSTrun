@@ -2,7 +2,11 @@ use std::{collections::BTreeMap, num::TryFromIntError};
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hashbrown::{HashMap, HashSet};
-use rerun::{EntityPath, external::re_log_types::NonMinI64, time::TimeInt};
+use rerun::{
+    EntityPath,
+    external::{arrow::array::ArrayRef, re_log_types::NonMinI64},
+    time::TimeInt,
+};
 use uom::si::{time::nanosecond, u64::Time};
 
 use crate::values::EntryValue;
@@ -38,6 +42,11 @@ impl Key {
         Self(self.0.parent().unwrap_or(&self.0).to_path_buf())
     }
 }
+impl std::fmt::Display for Key {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl Into<EntityPath> for Key {
     fn into(self) -> EntityPath {
@@ -46,7 +55,7 @@ impl Into<EntityPath> for Key {
 }
 
 pub struct EntryLog {
-    entries: HashMap<Key, BTreeMap<Timestamp, EntryValue>>,
+    entries: HashMap<Key, BTreeMap<Timestamp, ArrayRef>>,
     changed: HashSet<(Key, Timestamp)>,
 }
 
@@ -64,16 +73,26 @@ impl EntryLog {
         timestamp: Timestamp,
         value: EntryValue,
     ) -> Result<(), String> {
-        let entry = self.entries.entry(key.clone()).or_default();
-        entry.insert(timestamp, value);
+        match value {
+            EntryValue::Arrow(array) => {
+                let entry = self.entries.entry(key.clone()).or_default();
+                entry.insert(timestamp, array);
 
-        self.changed.insert((key.clone(), timestamp));
+                self.changed.insert((key, timestamp));
+            }
+            // treat maps transparently as a set of entries
+            EntryValue::Map(map) => {
+                for (k, v) in map {
+                    self.add_entry(key.join(Utf8Path::new(&k)), timestamp, v)?;
+                }
+            }
+        }
 
         Ok(())
     }
 
     /// Gets the changed entries with their values and clears the changed set.
-    pub fn get_changed(&mut self) -> Vec<(Key, Timestamp, EntryValue)> {
+    pub fn get_changed(&mut self) -> Vec<(Key, Timestamp, ArrayRef)> {
         self.changed
             .drain()
             .filter_map(|(key, time)| {
@@ -85,14 +104,14 @@ impl EntryLog {
             .collect()
     }
 
-    pub fn get_entry(&self, key: &Key) -> Option<&BTreeMap<Timestamp, EntryValue>> {
+    pub fn get_entry(&self, key: &Key) -> Option<&BTreeMap<Timestamp, ArrayRef>> {
         self.entries.get(key)
     }
 
-    pub fn get_latest_entry(&self, key: &Key) -> Option<(&Timestamp, &EntryValue)> {
+    pub fn get_latest_entry(&self, key: &Key) -> Option<(&Timestamp, &ArrayRef)> {
         self.entries.get(key).and_then(BTreeMap::last_key_value)
     }
-    pub fn get_latest_from(&self, key: &Key, time: Timestamp) -> Option<(&Timestamp, &EntryValue)> {
+    pub fn get_latest_from(&self, key: &Key, time: Timestamp) -> Option<(&Timestamp, &ArrayRef)> {
         self.entries
             .get(key)
             .and_then(|entry| entry.range(..=time).last())

@@ -1,8 +1,14 @@
 use hashbrown::HashMap;
 use rerun::{
-    ApplicationId, AsComponents, ComponentBatch, EntityPath, Scalars, StoreId, TimePoint, Timeline,
+    ApplicationId, AsComponents, ComponentBatch, EntityPath, Loggable, Scalars, StoreId, TimePoint,
+    Timeline,
     external::{
         anyhow::{self, bail},
+        arrow::{
+            self,
+            array::{AsArray, Float64Array},
+            datatypes::{DataType, Float64Type, Utf8Type},
+        },
         re_chunk::ChunkBuilder,
         re_log,
     },
@@ -15,7 +21,7 @@ use crate::{
 };
 
 fn retrieve_component(
-    log: &mut EntryLog,
+    log: &EntryLog,
     timestamp: Timestamp,
     parent: &Key,
     component: &str,
@@ -24,17 +30,18 @@ fn retrieve_component(
     if component != "Scalar" {
         bail!("wrong component type");
     }
+    let array = arrow::compute::cast(
+        &log.get_latest_from(&key, timestamp)
+            .map(|(_, t)| t.clone())
+            .ok_or_else(|| {
+                anyhow::anyhow!("couldn't find latest value for {key} at {timestamp:?}")
+            })?,
+        &DataType::Float64,
+    )?;
 
-    let Some(EntryValue::Int64Array(vals)) =
-        dbg!(log.get_latest_from(&key, timestamp).map(|(_, t)| t.clone()))
-    else {
-        bail!("couldn't find latest value");
-    };
-
-    Ok(vals
-        .into_iter()
-        .map(|i| rerun::components::Scalar::from(i as f64))
-        .collect::<Vec<rerun::components::Scalar>>())
+    Ok(rerun::components::Scalar::from_arrow(
+        array.as_primitive::<Float64Type>(),
+    )?)
 }
 
 pub fn log_changes_to_chunks(
@@ -45,24 +52,30 @@ pub fn log_changes_to_chunks(
 ) -> Vec<Chunk> {
     let mut entities = HashMap::<Key, ChunkBuilder>::new();
 
-    for (key, timestamp, val) in log.get_changed() {
+    for (key, timestamp, _val) in log.get_changed() {
         let builder = || Chunk::builder(key.clone().into());
 
         let parent = key.parent();
-        match (
-            log.get_latest_entry(&parent.join_str(".type"))
-                .map(|(_, t)| t.clone()),
-            log.get_latest_entry(&parent.join_str(".components"))
-                .map(|(_, t)| t.clone()),
-        ) {
-            (Some(EntryValue::String(s)), Some(EntryValue::StringArray(components)))
-                if s == "Entity" =>
-            {
+
+        let ty = log
+            .get_latest_entry(&parent.join_str(".type"))
+            .map(|(_, t)| &**t)
+            .and_then(|a| a.as_bytes_opt::<Utf8Type>());
+
+        let components = log
+            .get_latest_entry(&parent.join_str(".components"))
+            .map(|(_, t)| t.clone());
+        let components = components
+            .as_ref()
+            .and_then(|a| a.as_bytes_opt::<Utf8Type>());
+
+        match (ty, components) {
+            (Some(ty), Some(components)) if ty.iter().next().unwrap().unwrap() == "Entity" => {
                 let mut chunk = entities.entry(parent.clone()).or_insert_with(builder);
 
                 re_log::info!("Skipping entity entry: {}; {:#?}", key.0, components);
-                for component in components {
-                    let component = match retrieve_component(log, timestamp, &parent, &component) {
+                for component in components.iter().flatten() {
+                    let component = match retrieve_component(log, timestamp, &parent, component) {
                         Ok(c) => c,
                         Err(e) => {
                             re_log::error!("error retrieving component: {e}");
