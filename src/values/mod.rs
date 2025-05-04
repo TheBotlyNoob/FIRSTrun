@@ -8,6 +8,10 @@ use rerun::external::{
     },
 };
 
+use crate::log::EntryLog;
+
+pub mod parse;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum EntryValue {
     Arrow(ArrayRef),
@@ -15,7 +19,11 @@ pub enum EntryValue {
 }
 
 impl EntryValue {
-    pub fn parse_from_wpilog(ty: &str, data: &[u8]) -> Result<Self, anyhow::Error> {
+    pub fn parse_from_wpilog(
+        ty: &str,
+        data: &[u8],
+        logger: &EntryLog,
+    ) -> Result<Self, anyhow::Error> {
         Ok(match ty {
             // the raw data
             "raw" => Self::Arrow(Arc::new(BinaryArray::from_iter_values([data]))),

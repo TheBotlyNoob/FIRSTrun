@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use hashbrown::HashMap;
 use rerun::{
     ApplicationId, AsComponents, ComponentBatch, EntityPath, Loggable, Scalars, StoreId, TimePoint,
@@ -9,6 +11,7 @@ use rerun::{
             array::{AsArray, Float64Array},
             datatypes::{DataType, Float64Type, Utf8Type},
         },
+        nohash_hasher::IntMap,
         re_chunk::ChunkBuilder,
         re_log,
     },
@@ -16,20 +19,18 @@ use rerun::{
 };
 
 use crate::{
-    log::{EntryLog, Key, Timestamp},
+    log::{EntryLog, Timestamp},
     values::EntryValue,
 };
 
 fn retrieve_component(
     log: &EntryLog,
     timestamp: Timestamp,
-    parent: &Key,
-    component: &str,
+    parent: &EntityPath,
+    component: impl AsRef<Path>,
 ) -> Result<impl ComponentBatch + std::fmt::Debug, anyhow::Error> {
-    let key = parent.join_str(component);
-    if component != "Scalar" {
-        bail!("wrong component type");
-    }
+    let key = parent.join(&EntityPath::from_file_path(component.as_ref()));
+
     let array = arrow::compute::cast(
         &log.get_latest_from(&key, timestamp)
             .map(|(_, t)| t.clone())
@@ -50,20 +51,20 @@ pub fn log_changes_to_chunks(
     timeline: Timeline,
     log: &mut EntryLog,
 ) -> Vec<Chunk> {
-    let mut entities = HashMap::<Key, ChunkBuilder>::new();
+    let mut entities = IntMap::<EntityPath, ChunkBuilder>::default();
 
     for (key, timestamp, _val) in log.get_changed() {
         let builder = || Chunk::builder(key.clone().into());
 
-        let parent = key.parent();
+        let parent = key.parent().unwrap_or_else(|| key.clone());
 
         let ty = log
-            .get_latest_entry(&parent.join_str(".type"))
+            .get_latest_entry(&parent.join(&EntityPath::from_single_string(".type")))
             .map(|(_, t)| &**t)
             .and_then(|a| a.as_bytes_opt::<Utf8Type>());
 
         let components = log
-            .get_latest_entry(&parent.join_str(".components"))
+            .get_latest_entry(&parent.join(&EntityPath::from_single_string(".components")))
             .map(|(_, t)| t.clone());
         let components = components
             .as_ref()
@@ -73,7 +74,7 @@ pub fn log_changes_to_chunks(
             (Some(ty), Some(components)) if ty.iter().next().unwrap().unwrap() == "Entity" => {
                 let mut chunk = entities.entry(parent.clone()).or_insert_with(builder);
 
-                re_log::info!("Skipping entity entry: {}; {:#?}", key.0, components);
+                re_log::info!("Skipping entity entry: {}; {:#?}", key, components);
                 for component in components.iter().flatten() {
                     let component = match retrieve_component(log, timestamp, &parent, component) {
                         Ok(c) => c,

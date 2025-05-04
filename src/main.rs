@@ -18,7 +18,7 @@ use conv::log_changes_to_chunks;
 use hashbrown::HashMap;
 
 use anyhow::anyhow;
-use log::{EntryLog, Key, Timestamp};
+use log::{EntryLog, Timestamp};
 use rerun::datatypes::Bool;
 use rerun::external::anyhow::Context;
 use rerun::external::re_log_types::{
@@ -142,7 +142,7 @@ fn fill_log<'file, 'log>(
                 return;
             };
 
-            let ty = match EntryValue::parse_from_wpilog(ctx.ty, data) {
+            let ty = match EntryValue::parse_from_wpilog(ctx.ty, data, nt_ctx) {
                 Ok(ty) => ty,
                 Err(e) => {
                     re_log::warn!(
@@ -155,8 +155,8 @@ fn fill_log<'file, 'log>(
                 }
             };
 
-            let key = Key(ctx.name.into());
-            nt_ctx.add_entry(key.clone(), record.timestamp, ty).unwrap();
+            let key = EntityPath::from_file_path(Path::new(ctx.name));
+            nt_ctx.add_entry(key, record.timestamp, ty).unwrap();
         }
         _ => (),
     }

@@ -3,7 +3,6 @@ use nom::{
     number::streaming as nstreaming,
 };
 use rerun::external::anyhow;
-use uom::si::{time::microsecond, u64::Time};
 
 use crate::log;
 
@@ -131,7 +130,7 @@ impl<'log> WpiRecord<'log> {
         let (input, entry_id) = Self::parse_dyn_int(input, lengths.size_entry_id())?;
         let (input, payload_len) = Self::parse_dyn_int(input, lengths.size_payload_len())?;
         let (input, timestamp) = Self::parse_dyn_int(input, lengths.size_timestamp())?;
-        let timestamp = log::Timestamp(Time::new::<microsecond>(timestamp));
+        let timestamp = log::Timestamp(timestamp);
 
         let (leftover, input) = bstreaming::take(payload_len)(input)?;
 
@@ -273,10 +272,11 @@ impl<'log> WpiLogFile<'log> {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+
+    use crate::log::Timestamp;
 
     #[test]
     fn test_example_header() {
@@ -399,12 +399,12 @@ mod tests {
 
         assert_eq!(input.len(), 0);
 
-        assert_eq!(record.timestamp, 1_000_000);
+        assert_eq!(record.timestamp.0, 1_000_000);
         assert_eq!(
             record.payload,
             super::Payload::Raw {
                 entry_id: 1,
-                data: vec![
+                data: &[
                     0x03, 0x00, 0x00, 0x00, //
                     0x00, 0x00, 0x00, 0x00
                 ],
@@ -461,7 +461,7 @@ mod tests {
 
         assert_eq!(input.len(), 0);
 
-        assert_eq!(record.timestamp, 1_000_000);
+        assert_eq!(record.timestamp.0, 1_000_000);
         assert_eq!(
             record.payload,
             super::Payload::Start {
@@ -502,7 +502,7 @@ mod tests {
 
         assert_eq!(input.len(), 0);
 
-        assert_eq!(record.timestamp, 1_000_000);
+        assert_eq!(record.timestamp.0, 1_000_000);
         assert_eq!(record.payload, super::Payload::Finish { entry_id: 1 });
     }
 
@@ -544,7 +544,7 @@ mod tests {
 
         assert_eq!(input.len(), 0);
 
-        assert_eq!(record.timestamp, 1_000_000);
+        assert_eq!(record.timestamp.0, 1_000_000);
         assert_eq!(
             record.payload,
             super::Payload::SetMetadata {
@@ -620,16 +620,17 @@ mod tests {
             //
             0x01, 0x00, 0x00, 0x00, // entry ID being finished
         ];
+
         file.extend_from_slice(&finish_record);
 
-        let (input, wpi_log) = super::WpiLogFile::parse(&file).unwrap();
+        let (input, wpi_log) = super::WpiLogFile::parse(&file, |_| {}).unwrap();
 
         assert_eq!(input.len(), 0);
 
         assert_eq!(wpi_log.version, 0x0100);
         assert_eq!(wpi_log.extra_header, "");
         assert_eq!(wpi_log.records.len(), 3);
-        assert_eq!(wpi_log.records[0].timestamp, 1_000_000);
+        assert_eq!(wpi_log.records[0].timestamp.0, 1_000_000);
         assert_eq!(
             wpi_log.records[0].payload,
             super::Payload::Start {
@@ -639,15 +640,16 @@ mod tests {
                 entry_metadata: r#"{"source":"log"}"#.into(),
             }
         );
-        assert_eq!(wpi_log.records[1].timestamp, 1_000_050);
+        dbg!(&wpi_log.records);
+        assert_eq!(wpi_log.records[1].timestamp.0, 1_000_050);
         assert_eq!(
             wpi_log.records[1].payload,
             super::Payload::Raw {
                 entry_id: 1,
-                data: "cool".as_bytes().to_vec(),
+                data: "cool".as_bytes(),
             }
         );
-        assert_eq!(wpi_log.records[2].timestamp, 1_000_100);
+        assert_eq!(wpi_log.records[2].timestamp.0, 1_000_100);
         assert_eq!(
             wpi_log.records[2].payload,
             super::Payload::Finish { entry_id: 1 }
@@ -656,10 +658,10 @@ mod tests {
 
     #[test]
     fn test_real_world() {
-        let example = include_bytes!("../../test_data/FRC_20250321_184359_FLOR_Q38.wpilog");
+        let example = include_bytes!("../../test_data/FRC_TBD_d225b5377c70a88d.wpilog");
 
-        let (input, _wpi_log) = super::WpiLogFile::parse(example).unwrap();
+        let (input, _wpi_log) = super::WpiLogFile::parse(example, |_| {}).unwrap();
 
         assert_eq!(input.len(), 0);
     }
-*/
+}
