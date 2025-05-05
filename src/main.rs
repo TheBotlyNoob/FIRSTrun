@@ -10,29 +10,24 @@
 
 pub mod wpilog;
 
-use std::iter::Peekable;
-use std::path::PathBuf;
-use std::{path::Path, sync::Arc};
+use std::path::Path;
 
 use conv::log_changes_to_chunks;
 use hashbrown::HashMap;
 
-use anyhow::anyhow;
-use log::{EntryLog, Timestamp};
-use rerun::datatypes::Bool;
+use log::EntryLog;
 use rerun::external::anyhow::Context;
 use rerun::external::re_log_types::{
-    BlueprintActivationCommand, SetStoreInfo, StoreInfo, StoreSource,
+    SetStoreInfo, StoreInfo, StoreSource,
 };
 use rerun::log::LogMsg;
 use rerun::{
-    ApplicationId, Loggable, MediaType, RecordingProperties, Scalars, TextLog, TextLogLevel,
+    ApplicationId, RecordingProperties,
 };
 use rerun::{
-    AsComponents, DataLoader as _, EntityPath, LoadedData, TextDocument, TimePoint, Timeline,
-    external::{anyhow, re_build_info, re_data_loader, re_log, re_log_types::NonMinI64},
+    DataLoader as _, EntityPath, LoadedData, TimePoint, Timeline,
+    external::{anyhow, re_build_info, re_data_loader, re_log},
     log::{Chunk, RowId},
-    time::TimeInt,
 };
 use tokio::runtime::Runtime;
 use values::EntryValue;
@@ -108,9 +103,9 @@ struct EntryContext<'log> {
     name: &'log str,
 }
 
-fn fill_log<'file, 'log>(
+fn fill_log<'file>(
     ctxs: &mut HashMap<u32, EntryContext<'file>>,
-    nt_ctx: &'log mut EntryLog,
+    nt_ctx: &mut EntryLog,
     record: WpiRecord<'file>,
 ) {
     match record.payload {
@@ -205,7 +200,7 @@ fn parse_and_log(
 
     tx.send(LoadedData::Chunk(
         WpiLogLoader::name(&WpiLogLoader),
-        store_id.clone(),
+        store_id,
         recording_props,
     ))
     .unwrap();

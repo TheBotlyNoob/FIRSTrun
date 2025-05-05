@@ -1,7 +1,6 @@
 use std::{collections::BTreeMap, num::TryFromIntError, path::Path};
 
-use camino::{Utf8Path, Utf8PathBuf};
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashSet;
 use rerun::{
     EntityPath,
     external::{arrow::array::ArrayRef, nohash_hasher::IntMap, re_log_types::NonMinI64},
@@ -28,6 +27,12 @@ impl TryInto<TimeInt> for Timestamp {
 pub struct EntryLog {
     entries: IntMap<EntityPath, BTreeMap<Timestamp, ArrayRef>>,
     changed: HashSet<(EntityPath, Timestamp)>,
+}
+
+impl Default for EntryLog {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EntryLog {

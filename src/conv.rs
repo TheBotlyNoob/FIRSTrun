@@ -1,27 +1,23 @@
 use std::path::Path;
 
-use hashbrown::HashMap;
 use rerun::{
-    ApplicationId, AsComponents, ComponentBatch, EntityPath, Loggable, Scalars, StoreId, TimePoint,
+    ApplicationId, ComponentBatch, EntityPath, Loggable, StoreId, TimePoint,
     Timeline,
     external::{
-        anyhow::{self, bail},
+        anyhow::{self},
         arrow::{
             self,
-            array::{AsArray, Float64Array},
+            array::AsArray,
             datatypes::{DataType, Float64Type, Utf8Type},
         },
         nohash_hasher::IntMap,
         re_chunk::ChunkBuilder,
         re_log,
     },
-    log::{Chunk, ChunkId, RowId},
+    log::{Chunk, RowId},
 };
 
-use crate::{
-    log::{EntryLog, Timestamp},
-    values::EntryValue,
-};
+use crate::log::{EntryLog, Timestamp};
 
 fn retrieve_component(
     log: &EntryLog,
@@ -54,7 +50,7 @@ pub fn log_changes_to_chunks(
     let mut entities = IntMap::<EntityPath, ChunkBuilder>::default();
 
     for (key, timestamp, _val) in log.get_changed() {
-        let builder = || Chunk::builder(key.clone().into());
+        let builder = || Chunk::builder(key.clone());
 
         let parent = key.parent().unwrap_or_else(|| key.clone());
 
@@ -72,7 +68,7 @@ pub fn log_changes_to_chunks(
 
         match (ty, components) {
             (Some(ty), Some(components)) if ty.iter().next().unwrap().unwrap() == "Entity" => {
-                let mut chunk = entities.entry(parent.clone()).or_insert_with(builder);
+                let chunk = entities.entry(parent.clone()).or_insert_with(builder);
 
                 re_log::info!("Skipping entity entry: {}; {:#?}", key, components);
                 for component in components.iter().flatten() {
@@ -100,8 +96,6 @@ pub fn log_changes_to_chunks(
         }
     }
 
-    entities
-        .into_iter()
-        .map(|(_, builder)| builder.build().unwrap())
+    entities.into_values().map(|builder| builder.build().unwrap())
         .collect()
 }

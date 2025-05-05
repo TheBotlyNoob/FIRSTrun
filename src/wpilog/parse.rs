@@ -2,19 +2,18 @@ use nom::{
     IResult, Parser, bytes::streaming as bstreaming, error::ErrorKind,
     number::streaming as nstreaming,
 };
-use rerun::external::anyhow;
 
 use crate::log;
 
 struct RecordHeaderLengths(u8);
 impl RecordHeaderLengths {
     /// Returns the size of the entry ID field in bytes.
-    pub fn size_entry_id(&self) -> u8 {
+    pub const fn size_entry_id(&self) -> u8 {
         (self.0 & 0b0000_0011) + 1
     }
 
     /// Returns the size of the payload length field in bytes.
-    pub fn size_payload_len(&self) -> u8 {
+    pub const fn size_payload_len(&self) -> u8 {
         ((self.0 & 0b0000_1100) >> 2) + 1
     }
 
@@ -25,7 +24,7 @@ impl RecordHeaderLengths {
 }
 impl From<u8> for RecordHeaderLengths {
     fn from(value: u8) -> Self {
-        RecordHeaderLengths(value)
+        Self(value)
     }
 }
 
@@ -48,11 +47,11 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::InvalidFormat(kind) => write!(f, "Invalid format: {:?}", kind),
-            ParseError::InvalidVersion => write!(f, "Invalid version"),
-            ParseError::InvalidString => write!(f, "Invalid string"),
-            ParseError::InvalidIntegerSize => write!(f, "Invalid integer size"),
-            ParseError::EOF => write!(f, "EOF"),
+            Self::InvalidFormat(kind) => write!(f, "Invalid format: {:?}", kind),
+            Self::InvalidVersion => write!(f, "Invalid version"),
+            Self::InvalidString => write!(f, "Invalid string"),
+            Self::InvalidIntegerSize => write!(f, "Invalid integer size"),
+            Self::EOF => write!(f, "EOF"),
         }
     }
 }
@@ -64,7 +63,7 @@ impl<T> nom::error::ParseError<T> for ParseError {
     }
 
     fn append(_input: T, kind: nom::error::ErrorKind, _other: Self) -> Self {
-        ParseError::InvalidFormat(kind)
+        Self::InvalidFormat(kind)
     }
 }
 
@@ -251,7 +250,7 @@ impl<'log> WpiLogFile<'log> {
         input: &'log [u8],
         mut record_cb: impl FnMut(WpiRecord<'log>),
     ) -> IResult<&[u8], Self, ParseError> {
-        let (mut input, (version, extra_header)) = Self::parse_header(input)?;
+        let (input, (version, extra_header)) = Self::parse_header(input)?;
 
         let (input, records) =
             nom::multi::many0(|input| -> IResult<&[u8], WpiRecord, ParseError> {
@@ -276,7 +275,7 @@ impl<'log> WpiLogFile<'log> {
 mod tests {
     use std::num::NonZeroUsize;
 
-    use crate::log::Timestamp;
+    
 
     #[test]
     fn test_example_header() {
@@ -466,9 +465,9 @@ mod tests {
             record.payload,
             super::Payload::Start {
                 entry_id: 1,
-                entry_name: "test".into(),
-                entry_type: "int64".into(),
-                entry_metadata: "".into(),
+                entry_name: "test",
+                entry_type: "int64",
+                entry_metadata: "",
             }
         );
     }
@@ -549,7 +548,7 @@ mod tests {
             record.payload,
             super::Payload::SetMetadata {
                 entry_id: 1,
-                entry_metadata: r#"{"source":"NT"}"#.into(),
+                entry_metadata: r#"{"source":"NT"}"#,
             }
         );
     }
@@ -635,9 +634,9 @@ mod tests {
             wpi_log.records[0].payload,
             super::Payload::Start {
                 entry_id: 1,
-                entry_name: "rerun".into(),
-                entry_type: "int64".into(),
-                entry_metadata: r#"{"source":"log"}"#.into(),
+                entry_name: "rerun",
+                entry_type: "int64",
+                entry_metadata: r#"{"source":"log"}"#,
             }
         );
         dbg!(&wpi_log.records);
@@ -646,7 +645,7 @@ mod tests {
             wpi_log.records[1].payload,
             super::Payload::Raw {
                 entry_id: 1,
-                data: "cool".as_bytes(),
+                data: b"cool",
             }
         );
         assert_eq!(wpi_log.records[2].timestamp.0, 1_000_100);
