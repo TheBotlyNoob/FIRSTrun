@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use hashbrown::HashMap;
+use parse::wpistruct::{WpiLibStruct, WpiLibStructData};
 use rerun::external::{
     anyhow::{self, Context, anyhow, bail},
     arrow::array::{

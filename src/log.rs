@@ -36,6 +36,7 @@ impl Default for EntryLog {
 }
 
 impl EntryLog {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             entries: IntMap::default(),
@@ -84,6 +85,7 @@ impl EntryLog {
             .collect()
     }
 
+    #[must_use]
     pub fn get_entry(&self, key: &EntityPath) -> Option<&BTreeMap<Timestamp, ArrayRef>> {
         self.entries.get(key)
     }
@@ -91,6 +93,7 @@ impl EntryLog {
     pub fn get_latest_entry(&self, key: &EntityPath) -> Option<(&Timestamp, &ArrayRef)> {
         self.entries.get(key).and_then(BTreeMap::last_key_value)
     }
+    #[must_use]
     pub fn get_latest_from(
         &self,
         key: &EntityPath,

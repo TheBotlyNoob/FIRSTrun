@@ -6,7 +6,8 @@
 //! $ cargo r -p custom_data_loader -- path/to/some/file
 //! ```
 
-#![warn(clippy::nursery)]
+#![warn(clippy::nursery, clippy::pedantic)]
+#![allow(clippy::missing_errors_doc, clippy::missing_panics_doc)]
 
 pub mod wpilog;
 
@@ -17,13 +18,9 @@ use hashbrown::HashMap;
 
 use log::EntryLog;
 use rerun::external::anyhow::Context;
-use rerun::external::re_log_types::{
-    SetStoreInfo, StoreInfo, StoreSource,
-};
+use rerun::external::re_log_types::{SetStoreInfo, StoreInfo, StoreSource};
 use rerun::log::LogMsg;
-use rerun::{
-    ApplicationId, RecordingProperties,
-};
+use rerun::{ApplicationId, RecordingProperties};
 use rerun::{
     DataLoader as _, EntityPath, LoadedData, TimePoint, Timeline,
     external::{anyhow, re_build_info, re_data_loader, re_log},
@@ -222,7 +219,7 @@ fn parse_and_log(
                 let mut nt_ctx = EntryLog::new();
 
                 let (_, _log) = WpiLogFile::parse(contents.as_slice(), |record| {
-                    fill_log(&mut ctxs, &mut nt_ctx, record)
+                    fill_log(&mut ctxs, &mut nt_ctx, record);
                 })
                 .map_err(|e| {
                     re_log::error!("WPI DataLog file error: {e}");

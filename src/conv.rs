@@ -1,8 +1,7 @@
 use std::path::Path;
 
 use rerun::{
-    ApplicationId, ComponentBatch, EntityPath, Loggable, StoreId, TimePoint,
-    Timeline,
+    ApplicationId, ComponentBatch, EntityPath, Loggable, StoreId, TimePoint, Timeline,
     external::{
         anyhow::{self},
         arrow::{
@@ -96,6 +95,8 @@ pub fn log_changes_to_chunks(
         }
     }
 
-    entities.into_values().map(|builder| builder.build().unwrap())
+    entities
+        .into_values()
+        .map(|builder| builder.build().unwrap())
         .collect()
 }

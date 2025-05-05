@@ -35,6 +35,7 @@ pub enum WpiLibStructTypes {
 }
 
 impl WpiLibStructTypes {
+    #[must_use]
     pub const fn to_arrow(&self) -> DataType {
         match self {
             Self::Bool => DataType::Boolean,
@@ -49,10 +50,12 @@ impl WpiLibStructTypes {
             Self::Uint64 => DataType::UInt64,
             Self::Float => DataType::Float32,
             Self::Double => DataType::Float64,
+            // signify opaque
             Self::Custom(_) => DataType::Binary,
         }
     }
 
+    #[must_use]
     pub fn from_wpi_struct_str(s: Cow<str>) -> Self {
         match s.as_ref() {
             "bool" => Self::Bool,
@@ -223,7 +226,7 @@ impl WpiLibStruct {
                 Err(_) => data,
             };
 
-            println!("Parsing data: {:?}", data);
+            println!("Parsing data: {data:?}");
 
             let Ok((remaining, (name, inner))) = struct_parser(data) else {
                 break;
@@ -281,7 +284,7 @@ mod test {
                     4
                 ),
             )])
-        )
+        );
     }
 
     #[test]
@@ -296,7 +299,7 @@ mod test {
                 "val".to_string(),
                 super::WpiLibStructData::Enum(HashMap::new(), WpiLibStructTypes::Int8),
             )])
-        )
+        );
     }
 
     #[test]
@@ -330,6 +333,6 @@ mod test {
                     ),
                 )
             ])
-        )
+        );
     }
 }

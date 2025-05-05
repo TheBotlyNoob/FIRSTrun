@@ -47,7 +47,7 @@ pub enum ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::InvalidFormat(kind) => write!(f, "Invalid format: {:?}", kind),
+            Self::InvalidFormat(kind) => write!(f, "Invalid format: {kind:?}"),
             Self::InvalidVersion => write!(f, "Invalid version"),
             Self::InvalidString => write!(f, "Invalid string"),
             Self::InvalidIntegerSize => write!(f, "Invalid integer size"),
@@ -229,6 +229,7 @@ pub struct WpiLogFile<'log> {
 }
 
 impl<'log> WpiLogFile<'log> {
+    #[must_use]
     pub fn is_wpilog(input: &[u8]) -> bool {
         input.starts_with(b"WPILOG")
     }
@@ -274,8 +275,6 @@ impl<'log> WpiLogFile<'log> {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
-
-    
 
     #[test]
     fn test_example_header() {
