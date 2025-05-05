@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use hashbrown::HashMap;
-use parse::wpistruct::{WpiLibStruct, WpiLibStructData};
+use parse::wpistruct::{
+    UnresolvedWpiLibStructType, WpiLibStructData, WpiLibStructSchema, WpiLibStructType,
+};
 use rerun::external::{
     anyhow::{self, Context, anyhow, bail},
     arrow::array::{
@@ -67,25 +69,28 @@ impl EntryValue {
                 String::from_utf8_lossy(data),
             ]))),
             // a single byte (0=false, 1=true) for each entry in the array[1]
-            "boolean[]" => Self::Arrow(Arc::new(BooleanArray::from_iter(
-                data.iter().map(|v| Some(*v != 0)),
-            ))),
+            "boolean[]" => Self::Arrow(Arc::new(
+                data.iter().map(|v| Some(*v != 0)).collect::<BooleanArray>(),
+            )),
             // 8-byte (64-bit) signed value for each entry in the array[1]
-            "int64[]" => Self::Arrow(Arc::new(Int64Array::from_iter(
+            "int64[]" => Self::Arrow(Arc::new(
                 data.chunks_exact(8)
-                    .map(|b| Some(i64::from_le_bytes(b.try_into().ok()?))),
-            ))),
+                    .map(|b| Some(i64::from_le_bytes(b.try_into().ok()?)))
+                    .collect::<Int64Array>(),
+            )),
             // 4-byte (32-bit) value for each entry in the array[1]
-            "float[]" => Self::Arrow(Arc::new(Float32Array::from_iter(
+            "float[]" => Self::Arrow(Arc::new(
                 data.chunks_exact(4)
-                    .map(|b| Some(f32::from_le_bytes(b.try_into().ok()?))),
-            ))),
+                    .map(|b| Some(f32::from_le_bytes(b.try_into().ok()?)))
+                    .collect::<Float32Array>(),
+            )),
             // 8-byte (64-bit) value for each entry in the array[1]
-            "double[]" => Self::Arrow(Arc::new(Float64Array::from_iter(
+            "double[]" => Self::Arrow(Arc::new(
                 data.chunks_exact(8)
-                    .map(|b| Some(f64::from_le_bytes(b.try_into().ok()?))),
-            ))),
-            // Starts with a 4-byte (32-bit) array length. Each string is stored as a 4-byte (32-bit) length followed by the UTF-8 string data            _ => None,
+                    .map(|b| Some(f64::from_le_bytes(b.try_into().ok()?)))
+                    .collect::<Float64Array>(),
+            )),
+            // Starts with a 4-byte (32-bit) array length. Each string is stored as a 4-byte (32-bit) length followed by the UTF-8 string data
             "string[]" => {
                 let (mut real_input, arr_len) = nom::number::complete::le_u32::<_, ()>(data)?;
                 let mut vals = Vec::with_capacity(arr_len as usize);
@@ -103,9 +108,43 @@ impl EntryValue {
             "json" => bail!("json not implemented"),
             "structschema" => {
                 // todo: parse struct
-                bail!("structschema not implemented")
+                let s = WpiLibStructSchema::parse(data)?;
+                println!("{s:#?}");
+
+                let resolved = WpiLibStructSchema {
+                    fields: s
+                        .fields
+                        .into_iter()
+                        .map(|(k, v)| {
+                            (
+                                k,
+                                WpiLibStructData {
+                                    count: v.count,
+                                    ty: match v.ty {
+                                        UnresolvedWpiLibStructType::Primitive(p) => {
+                                            WpiLibStructType::Primitive(p)
+                                        }
+                                        UnresolvedWpiLibStructType::Custom(_) => todo!(),
+                                    },
+                                    value: v.value,
+                                },
+                            )
+                        })
+                        .collect(),
+                };
+
+                resolved.datatype();
+
+                bail!("todo");
             }
-            _ => bail!("unknown data type {ty} (data length: {})", data.len()),
+            s => {
+                if let Some(s) = s.strip_prefix("struct:") {
+                    // resolve type
+                    bail!("todo struct");
+                } else {
+                    bail!("unknown data type {ty} (data length: {})", data.len());
+                }
+            }
         })
     }
 }

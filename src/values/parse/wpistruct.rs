@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, num::NonZeroUsize};
 
 use hashbrown::HashMap;
 use nom::{
@@ -13,11 +13,12 @@ use nom::{
 };
 use rerun::external::{
     anyhow::{self},
-    arrow::datatypes::DataType,
+    arrow::datatypes::{DataType, Field, SchemaBuilder},
+    re_log,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum WpiLibStructTypes {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum WpiLibStructPrimitives {
     Bool,
     Char,
     Int8,
@@ -30,13 +31,50 @@ pub enum WpiLibStructTypes {
     Uint64,
     Float,
     Double,
+}
+impl TryFrom<&str> for WpiLibStructPrimitives {
+    type Error = ();
 
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value.as_ref() {
+            "bool" => Self::Bool,
+            "char" => Self::Char,
+            "int8" => Self::Int8,
+            "int16" => Self::Int16,
+            "int32" => Self::Int32,
+            "int64" => Self::Int64,
+            "uint8" => Self::Uint8,
+            "uint16" => Self::Uint16,
+            "uint32" => Self::Uint32,
+            "uint64" => Self::Uint64,
+            "float" | "float32" => Self::Float,
+            "double" | "float64" => Self::Double,
+            _ => return Err(()),
+        })
+    }
+}
+impl WpiLibStructPrimitives {
+    pub fn size(self) -> usize {
+        use WpiLibStructPrimitives::*;
+        match self {
+            Bool | Char | Int8 | Uint8 => 1,
+            Int16 | Uint16 => 2,
+            Int32 | Uint32 | Float => 3,
+            Int64 | Uint64 | Double => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum UnresolvedWpiLibStructType {
+    Primitive(WpiLibStructPrimitives),
     Custom(String),
 }
 
-impl WpiLibStructTypes {
+impl WpiLibStructPrimitives {
     #[must_use]
-    pub const fn to_arrow(&self) -> DataType {
+    /// Converts the current type to an Arrow primitive [`DataType`]
+    pub const fn datatype(&self) -> DataType {
         match self {
             Self::Bool => DataType::Boolean,
             Self::Char => DataType::Utf8,
@@ -50,40 +88,68 @@ impl WpiLibStructTypes {
             Self::Uint64 => DataType::UInt64,
             Self::Float => DataType::Float32,
             Self::Double => DataType::Float64,
-            // signify opaque
-            Self::Custom(_) => DataType::Binary,
         }
     }
+}
 
-    #[must_use]
-    pub fn from_wpi_struct_str(s: Cow<str>) -> Self {
-        match s.as_ref() {
-            "bool" => Self::Bool,
-            "char" => Self::Char,
-            "int8" => Self::Int8,
-            "int16" => Self::Int16,
-            "int32" => Self::Int32,
-            "int64" => Self::Int64,
-            "uint8" => Self::Uint8,
-            "uint16" => Self::Uint16,
-            "uint32" => Self::Uint32,
-            "uint64" => Self::Uint64,
-            "float" | "float32" => Self::Float,
-            "double" | "float64" => Self::Double,
-            _ => Self::Custom(s.into_owned()),
+impl<'a> From<Cow<'a, str>> for UnresolvedWpiLibStructType {
+    fn from(value: Cow<'a, str>) -> Self {
+        if let Ok(primitive) = WpiLibStructPrimitives::try_from(value.as_ref()) {
+            Self::Primitive(primitive)
+        } else {
+            Self::Custom(value.into_owned())
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WpiLibStructData {
-    Value(WpiLibStructTypes),
-    Enum(HashMap<String, i64>, WpiLibStructTypes),
-    Array(Box<WpiLibStructData>, usize),
+pub enum WpiLibStructType {
+    Primitive(WpiLibStructPrimitives),
+    Custom(WpiLibStructSchema<WpiLibStructType>),
 }
 
-pub struct WpiLibStruct {
-    pub fields: HashMap<String, WpiLibStructData>,
+impl WpiLibStructType {
+    pub fn datatype(&self) -> DataType {
+        match self {
+            Self::Primitive(p) => p.datatype(),
+            Self::Custom(s) => s.datatype(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WpiLibStructValues {
+    Value,
+    Enum(HashMap<String, i64>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WpiLibStructData<ValueType> {
+    /// A Some value dictates that this is an array
+    pub count: Option<NonZeroUsize>,
+    pub value: WpiLibStructValues,
+    pub ty: ValueType,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WpiLibStructSchema<ValueType> {
+    pub fields: HashMap<String, WpiLibStructData<ValueType>>,
+}
+
+impl WpiLibStructSchema<WpiLibStructType> {
+    pub fn datatype(&self) -> DataType {
+        let mut builder = SchemaBuilder::new();
+
+        for (name, data) in &self.fields {
+            builder.push(Field::new(name, data.ty.datatype(), true));
+        }
+
+        let fields = builder.finish().fields;
+
+        re_log::info!(?fields);
+
+        DataType::Struct(fields)
+    }
 }
 
 pub fn identifier(input: &[u8]) -> IResult<&[u8], &[u8]> {
@@ -94,7 +160,9 @@ pub fn identifier(input: &[u8]) -> IResult<&[u8], &[u8]> {
     .parse(input)
 }
 
-fn struct_parser(data: &[u8]) -> IResult<&[u8], (String, WpiLibStructData)> {
+fn struct_parser(
+    data: &[u8],
+) -> IResult<&[u8], (String, WpiLibStructData<UnresolvedWpiLibStructType>)> {
     println!("struct parsing");
     dbg!(String::from_utf8_lossy(data));
 
@@ -131,29 +199,31 @@ fn struct_parser(data: &[u8]) -> IResult<&[u8], (String, WpiLibStructData)> {
         ),
         tag("]"),
     )
-    .map(|(_, n, _)| Some(n))
+    // TODO: we shouldn't treat zero-sized arrays as a single value,
+    // but what else can we do?
+    .map(|(_, n, _)| NonZeroUsize::new(n))
     .parse(data)
     .unwrap_or((data, None));
 
     dbg!(count);
 
     let name = String::from_utf8_lossy(identifier_name).into_owned();
-    let ty = WpiLibStructTypes::from_wpi_struct_str(String::from_utf8_lossy(typename));
+    let ty = UnresolvedWpiLibStructType::from(String::from_utf8_lossy(typename));
 
     let wpistruct = if let Some(wenum) = wpienum {
-        WpiLibStructData::Enum(wenum, ty)
+        WpiLibStructValues::Enum(wenum)
     } else {
-        WpiLibStructData::Value(ty)
+        WpiLibStructValues::Value
     };
 
     Ok((
         data,
         (
             name,
-            if let Some(count) = count {
-                WpiLibStructData::Array(Box::new(wpistruct), count)
-            } else {
-                wpistruct
+            WpiLibStructData {
+                count,
+                value: wpistruct,
+                ty,
             },
         ),
     ))
@@ -216,7 +286,7 @@ fn enum_parser(data: &[u8]) -> IResult<&[u8], HashMap<String, i64>> {
     Ok((data, values))
 }
 
-impl WpiLibStruct {
+impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
     pub fn parse(mut data: &[u8]) -> Result<Self, anyhow::Error> {
         let mut fields = HashMap::new();
 
@@ -247,22 +317,30 @@ impl WpiLibStruct {
 
 #[cfg(test)]
 mod test {
-    use crate::values::parse::wpistruct::WpiLibStructTypes;
+    use std::num::NonZeroUsize;
 
-    use super::WpiLibStruct;
+    use crate::values::parse::wpistruct::{
+        UnresolvedWpiLibStructType, WpiLibStructData, WpiLibStructPrimitives, WpiLibStructValues,
+    };
+
+    use super::WpiLibStructSchema;
     use hashbrown::HashMap;
 
     #[test]
     fn basic_struct() {
         let schema = b"  bool  value  ";
 
-        let wpistruct = WpiLibStruct::parse(schema).unwrap();
+        let wpistruct = WpiLibStructSchema::parse(schema).unwrap();
 
         assert_eq!(
             wpistruct.fields,
             HashMap::from([(
                 "value".to_string(),
-                super::WpiLibStructData::Value(super::WpiLibStructTypes::Bool),
+                WpiLibStructData {
+                    count: None,
+                    value: WpiLibStructValues::Value,
+                    ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Bool)
+                }
             )])
         );
     }
@@ -271,18 +349,17 @@ mod test {
     fn array_struct() {
         let schema = b"  double  arr  [  4  ]  ";
 
-        let wpistruct = WpiLibStruct::parse(schema).unwrap();
+        let wpistruct = WpiLibStructSchema::parse(schema).unwrap();
 
         assert_eq!(
             wpistruct.fields,
             HashMap::from([(
                 "arr".to_string(),
-                super::WpiLibStructData::Array(
-                    Box::new(super::WpiLibStructData::Value(
-                        super::WpiLibStructTypes::Double
-                    )),
-                    4
-                ),
+                WpiLibStructData {
+                    count: NonZeroUsize::new(4),
+                    value: WpiLibStructValues::Value,
+                    ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Bool)
+                }
             )])
         );
     }
@@ -291,46 +368,56 @@ mod test {
     fn basic_enum() {
         let schema = b"  enum  {  }  int8  val";
 
-        let wpistruct = WpiLibStruct::parse(schema).unwrap();
+        let wpistruct = WpiLibStructSchema::parse(schema).unwrap();
 
         assert_eq!(
             wpistruct.fields,
             HashMap::from([(
                 "val".to_string(),
-                super::WpiLibStructData::Enum(HashMap::new(), WpiLibStructTypes::Int8),
+                WpiLibStructData {
+                    count: None,
+                    value: WpiLibStructValues::Enum(HashMap::new()),
+                    ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Int8)
+                }
             )])
         );
     }
 
     #[test]
     fn multi_struct() {
-        let schema = b"  enum  {  a  =  3  }  int64  something  ;  int8  other  ;  enum  {  multi  = 64  }  uint16  number_3[3]";
+        let schema = b"  enum  {  a  =  3  ,  }  int64  something  ;  int8  other  ;  enum  {  multi  =  64,  other=24  }  uint16  number_3[3]";
 
-        let wpistruct = WpiLibStruct::parse(schema).unwrap();
+        let wpistruct = WpiLibStructSchema::parse(schema).unwrap();
 
         assert_eq!(
             wpistruct.fields,
             HashMap::from([
                 (
                     "something".to_string(),
-                    super::WpiLibStructData::Enum(
-                        HashMap::from([("a".to_string(), 3)]),
-                        WpiLibStructTypes::Int64
-                    ),
+                    WpiLibStructData {
+                        count: None,
+                        value: WpiLibStructValues::Enum(HashMap::from([("a".to_string(), 3)]),),
+                        ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Int64,)
+                    },
                 ),
                 (
                     "other".to_string(),
-                    super::WpiLibStructData::Value(super::WpiLibStructTypes::Int8),
+                    WpiLibStructData {
+                        count: None,
+                        value: WpiLibStructValues::Value,
+                        ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Int8)
+                    }
                 ),
                 (
                     "number_3".to_string(),
-                    super::WpiLibStructData::Array(
-                        Box::new(super::WpiLibStructData::Enum(
-                            HashMap::from([("multi".to_string(), 64)]),
-                            WpiLibStructTypes::Uint16
-                        )),
-                        3
-                    ),
+                    WpiLibStructData {
+                        count: None,
+                        value: WpiLibStructValues::Enum(HashMap::from([
+                            ("multi".to_string(), 64),
+                            ("other".to_string(), 24)
+                        ]),),
+                        ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Uint16),
+                    }
                 )
             ])
         );
