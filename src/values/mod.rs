@@ -1,13 +1,19 @@
-use std::sync::Arc;
+use std::{fmt::Display, sync::Arc};
 
 use hashbrown::HashMap;
+use nom::{Finish as _, IResult};
 use parse::wpistruct::{
-    UnresolvedWpiLibStructType, WpiLibStructData, WpiLibStructSchema, WpiLibStructType,
+    UnresolvedWpiLibStructType, WpiLibStructData, WpiLibStructPrimitives, WpiLibStructSchema,
+    WpiLibStructType,
 };
 use rerun::external::{
     anyhow::{self, Context, anyhow, bail},
-    arrow::array::{
-        ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array, StringArray,
+    arrow::{
+        array::{
+            ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array, NullArray,
+            StringArray, StructArray,
+        },
+        datatypes::DataType,
     },
 };
 
@@ -21,21 +27,43 @@ pub enum EntryValue {
     Map(HashMap<String, EntryValue>),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ParseError {
+    InvalidFormat(nom::error::ErrorKind),
+}
+
+impl std::error::Error for ParseError {}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidFormat(kind) => write!(f, "Invalid format: {kind:?}"),
+        }
+    }
+}
+impl<T> nom::error::ParseError<T> for ParseError {
+    fn from_error_kind(_input: T, kind: nom::error::ErrorKind) -> Self {
+        Self::InvalidFormat(kind)
+    }
+
+    fn append(_input: T, kind: nom::error::ErrorKind, _other: Self) -> Self {
+        Self::InvalidFormat(kind)
+    }
+}
+
 impl EntryValue {
-    pub fn parse_from_wpilog(
-        ty: &str,
-        data: &[u8],
-        logger: &EntryLog,
-    ) -> Result<Self, anyhow::Error> {
+    fn parse_datatype(data: &[u8], array: bool, ty: DataType) -> Result<Self, anyhow::Error> {
         Ok(match ty {
             // the raw data
-            "raw" => Self::Arrow(Arc::new(BinaryArray::from_iter_values([data]))),
+            DataType::Binary if !array => {
+                Self::Arrow(Arc::new(BinaryArray::from_iter_values([data])))
+            }
             // single byte (0=false, 1=true)
-            "boolean" => Self::Arrow(Arc::new(BooleanArray::from_iter(
+            DataType::Boolean if !array => Self::Arrow(Arc::new(BooleanArray::from_iter(
                 data.first().map(|&b| Some(b != 0)),
             ))),
             // 8-byte (64-bit) signed value
-            "int64" => data
+            DataType::Int64 if !array => data
                 .get(0..8)
                 .with_context(|| anyhow!("not enough data for int64"))?
                 .try_into()
@@ -45,7 +73,7 @@ impl EntryValue {
                     ])))
                 })?,
             // 4-byte (32-bit) IEEE-754 value
-            "float" => data
+            DataType::Float32 if !array => data
                 .get(0..4)
                 .with_context(|| anyhow!("not enough data for float"))?
                 .try_into()
@@ -55,7 +83,7 @@ impl EntryValue {
                     ])))
                 })?,
             // 8-byte (64-bit) IEEE-754 value
-            "double" => data
+            DataType::Float64 if !array => data
                 .get(0..8)
                 .with_context(|| anyhow!("not enough data for double"))?
                 .try_into()
@@ -65,33 +93,33 @@ impl EntryValue {
                     ])))
                 })?,
             // UTF-8 encoded string data
-            "string" => Self::Arrow(Arc::new(StringArray::from_iter_values([
+            DataType::Utf8 if !array => Self::Arrow(Arc::new(StringArray::from_iter_values([
                 String::from_utf8_lossy(data),
             ]))),
             // a single byte (0=false, 1=true) for each entry in the array[1]
-            "boolean[]" => Self::Arrow(Arc::new(
+            DataType::Boolean if array => Self::Arrow(Arc::new(
                 data.iter().map(|v| Some(*v != 0)).collect::<BooleanArray>(),
             )),
             // 8-byte (64-bit) signed value for each entry in the array[1]
-            "int64[]" => Self::Arrow(Arc::new(
+            DataType::Int64 if array => Self::Arrow(Arc::new(
                 data.chunks_exact(8)
                     .map(|b| Some(i64::from_le_bytes(b.try_into().ok()?)))
                     .collect::<Int64Array>(),
             )),
             // 4-byte (32-bit) value for each entry in the array[1]
-            "float[]" => Self::Arrow(Arc::new(
+            DataType::Float32 if array => Self::Arrow(Arc::new(
                 data.chunks_exact(4)
                     .map(|b| Some(f32::from_le_bytes(b.try_into().ok()?)))
                     .collect::<Float32Array>(),
             )),
             // 8-byte (64-bit) value for each entry in the array[1]
-            "double[]" => Self::Arrow(Arc::new(
+            DataType::Float64 if array => Self::Arrow(Arc::new(
                 data.chunks_exact(8)
                     .map(|b| Some(f64::from_le_bytes(b.try_into().ok()?)))
                     .collect::<Float64Array>(),
             )),
             // Starts with a 4-byte (32-bit) array length. Each string is stored as a 4-byte (32-bit) length followed by the UTF-8 string data
-            "string[]" => {
+            DataType::Utf8 if array => {
                 let (mut real_input, arr_len) = nom::number::complete::le_u32::<_, ()>(data)?;
                 let mut vals = Vec::with_capacity(arr_len as usize);
 
@@ -105,46 +133,90 @@ impl EntryValue {
 
                 Self::Arrow(Arc::new(StringArray::from_iter_values(vals)))
             }
+            _ => bail!("unsupported datatype"),
+        })
+    }
+
+    pub fn parse_from_wpilog(
+        ty: &str,
+        data: &[u8],
+        entry_name: impl Into<String>,
+        logger: &mut EntryLog,
+    ) -> Result<Self, anyhow::Error> {
+        Ok(match ty {
+            "raw" => Self::parse_datatype(data, false, DataType::Binary)?,
+            "boolean" => Self::parse_datatype(data, false, DataType::Boolean)?,
+            "int64" => Self::parse_datatype(data, false, DataType::Int64)?,
+            "float" => Self::parse_datatype(data, false, DataType::Float32)?,
+            "double" => Self::parse_datatype(data, false, DataType::Float64)?,
+            "string" => Self::parse_datatype(data, false, DataType::Utf8)?,
+            "boolean[]" => Self::parse_datatype(data, true, DataType::Boolean)?,
+            "int64[]" => Self::parse_datatype(data, true, DataType::Int64)?,
+            "float[]" => Self::parse_datatype(data, true, DataType::Float32)?,
+            "double[]" => Self::parse_datatype(data, true, DataType::Float64)?,
+            "string[]" => Self::parse_datatype(data, true, DataType::Utf8)?,
             "json" => bail!("json not implemented"),
             "structschema" => {
-                // todo: parse struct
                 let s = WpiLibStructSchema::parse(data)?;
-                println!("{s:#?}");
 
-                let resolved = WpiLibStructSchema {
-                    fields: s
-                        .fields
-                        .into_iter()
-                        .map(|(k, v)| {
-                            (
-                                k,
-                                WpiLibStructData {
-                                    count: v.count,
-                                    ty: match v.ty {
-                                        UnresolvedWpiLibStructType::Primitive(p) => {
-                                            WpiLibStructType::Primitive(p)
-                                        }
-                                        UnresolvedWpiLibStructType::Custom(_) => todo!(),
-                                    },
-                                    value: v.value,
-                                },
-                            )
-                        })
-                        .collect(),
-                };
+                logger.add_struct(entry_name, s);
 
-                resolved.datatype();
-
-                bail!("todo");
+                Self::Arrow(Arc::new(StringArray::from_iter_values([
+                    String::from_utf8_lossy(data).into_owned(),
+                ])))
             }
             s => {
-                if let Some(s) = s.strip_prefix("struct:") {
-                    // resolve type
-                    bail!("todo struct");
+                if let Some(mut s) = s.strip_prefix("struct:") {
+                    let is_array = s.strip_suffix("[]").map(|st| s = st).is_some();
+
+                    let schema = logger
+                        .resolve_struct(s)
+                        .with_context(|| anyhow!("couldn't resolve struct {s}"))?;
+
+                    dbg!(Self::parse_from_struct(data, schema)?.1)
                 } else {
                     bail!("unknown data type {ty} (data length: {})", data.len());
                 }
             }
         })
+    }
+
+    fn parse_from_struct<'d>(
+        mut data: &'d [u8],
+        schema: WpiLibStructSchema<WpiLibStructType>,
+    ) -> Result<(&'d [u8], Self), anyhow::Error> {
+        let mut new_map = HashMap::new();
+
+        for (name, field) in schema.fields.into_iter() {
+            let this = match field.ty {
+                WpiLibStructType::Primitive(p) => {
+                    let (new_data, this) = Self::parse_from_primitive(data, field, p)?;
+                    data = new_data;
+
+                    this
+                }
+                WpiLibStructType::Custom(s) => {
+                    let (new_data, this) = Self::parse_from_struct(data, s)?;
+                    data = new_data;
+
+                    this
+                }
+            };
+            new_map.insert(name.clone(), this);
+        }
+
+        Ok((data, Self::Map(new_map)))
+    }
+
+    fn parse_from_primitive<'d>(
+        data: &'d [u8],
+        field: WpiLibStructData<WpiLibStructType>,
+        ty: WpiLibStructPrimitives,
+    ) -> Result<(&'d [u8], Self), anyhow::Error> {
+        let (data, value) = nom::bytes::complete::take::<_, _, ()>(ty.size())(data)?;
+
+        let value = Self::parse_datatype(value, field.count.is_some(), ty.datatype())?;
+
+        Ok((data, value))
     }
 }

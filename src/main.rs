@@ -134,7 +134,14 @@ fn fill_log<'file>(
                 return;
             };
 
-            let ty = match EntryValue::parse_from_wpilog(ctx.ty, data, nt_ctx) {
+            let key = EntityPath::from_file_path(Path::new(ctx.name));
+
+            let ty = match EntryValue::parse_from_wpilog(
+                ctx.ty,
+                data,
+                key.last().map_or("", rerun::EntityPathPart::unescaped_str),
+                nt_ctx,
+            ) {
                 Ok(ty) => ty,
                 Err(e) => {
                     re_log::warn!(
@@ -147,7 +154,6 @@ fn fill_log<'file>(
                 }
             };
 
-            let key = EntityPath::from_file_path(Path::new(ctx.name));
             nt_ctx.add_entry(key, record.timestamp, ty).unwrap();
         }
         _ => (),

@@ -94,11 +94,8 @@ impl WpiLibStructPrimitives {
 
 impl<'a> From<Cow<'a, str>> for UnresolvedWpiLibStructType {
     fn from(value: Cow<'a, str>) -> Self {
-        if let Ok(primitive) = WpiLibStructPrimitives::try_from(value.as_ref()) {
-            Self::Primitive(primitive)
-        } else {
-            Self::Custom(value.into_owned())
-        }
+        WpiLibStructPrimitives::try_from(value.as_ref())
+            .map_or_else(|_| Self::Custom(value.into_owned()), Self::Primitive)
     }
 }
 
@@ -312,6 +309,37 @@ impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
         }
 
         Ok(Self { fields })
+    }
+
+    pub fn resolve(
+        &self,
+        struct_map: &HashMap<String, Self>,
+    ) -> Option<WpiLibStructSchema<WpiLibStructType>> {
+        Some(WpiLibStructSchema {
+            fields: self
+                .fields
+                .iter()
+                .map(|(name, data)| {
+                    Some((
+                        name.clone(),
+                        WpiLibStructData {
+                            count: data.count.clone(),
+                            value: data.value.clone(),
+                            ty: match data.ty {
+                                UnresolvedWpiLibStructType::Primitive(p) => {
+                                    WpiLibStructType::Primitive(p)
+                                }
+                                UnresolvedWpiLibStructType::Custom(ref s) => {
+                                    struct_map.get(s).and_then(|s| {
+                                        Some(WpiLibStructType::Custom(s.resolve(struct_map)?))
+                                    })?
+                                }
+                            },
+                        },
+                    ))
+                })
+                .collect::<Option<HashMap<_, _>>>()?,
+        })
     }
 }
 

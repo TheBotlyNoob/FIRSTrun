@@ -1,13 +1,13 @@
-use std::path::Path;
+use std::{fmt::Debug, path::Path, sync::Arc};
 
 use rerun::{
     ApplicationId, ComponentBatch, EntityPath, Loggable, StoreId, TimePoint, Timeline,
     external::{
-        anyhow::{self},
+        anyhow::{self, bail},
         arrow::{
             self,
-            array::AsArray,
-            datatypes::{DataType, Float64Type, Utf8Type},
+            array::{ArrayData, AsArray, FixedSizeListArray, StructArray},
+            datatypes::{DataType, Field, Float64Type, Utf8Type},
         },
         nohash_hasher::IntMap,
         re_chunk::ChunkBuilder,
@@ -18,26 +18,53 @@ use rerun::{
 
 use crate::log::{EntryLog, Timestamp};
 
+trait DebuggableComponent: ComponentBatch + Debug {}
+impl<T: ComponentBatch + Debug> DebuggableComponent for T {}
+
 fn retrieve_component(
     log: &EntryLog,
     timestamp: Timestamp,
     parent: &EntityPath,
-    component: impl AsRef<Path>,
-) -> Result<impl ComponentBatch + std::fmt::Debug, anyhow::Error> {
-    let key = parent.join(&EntityPath::from_file_path(component.as_ref()));
+    component: &str,
+) -> Result<Box<dyn DebuggableComponent>, anyhow::Error> {
+    let key = parent.join(&EntityPath::from_file_path(Path::new(component)));
 
-    let array = arrow::compute::cast(
-        &log.get_latest_from(&key, timestamp)
-            .map(|(_, t)| t.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!("couldn't find latest value for {key} at {timestamp:?}")
-            })?,
-        &DataType::Float64,
-    )?;
+    if component == "Scalar" {
+        let array = arrow::compute::cast(
+            &log.get_latest_from(&key, timestamp)
+                .map(|(_, t)| t.clone())
+                .ok_or_else(|| {
+                    anyhow::anyhow!("couldn't find latest value for {key} at {timestamp:?}")
+                })?,
+            &DataType::Float64,
+        )?;
 
-    Ok(rerun::components::Scalar::from_arrow(
-        array.as_primitive::<Float64Type>(),
-    )?)
+        Ok(Box::new(rerun::components::Scalar::from_arrow(
+            array.as_primitive::<Float64Type>(),
+        )?))
+    } else if component == "Point3d" {
+        let get = |val: &str| {
+            Ok::<_, anyhow::Error>(
+                log.get_latest_from(&key.join(&EntityPath::from_single_string(val)), timestamp)
+                    .map(|(_, t)| t.clone())
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("couldn't find latest value for {key} at {timestamp:?}")
+                    })?
+                    .to_data(),
+            )
+        };
+        let mut fields = ArrayData::builder(DataType::Float32)
+            .len(3)
+            .add_child_data(get("x")?)
+            .add_child_data(get("y")?)
+            .add_child_data(get("z")?)
+            .build()?;
+        let array = FixedSizeListArray::from(fields);
+
+        Ok(Box::new(rerun::components::Position3D::from_arrow(&array)?))
+    } else {
+        bail!("unknown component");
+    }
 }
 
 pub fn log_changes_to_chunks(
@@ -83,11 +110,10 @@ pub fn log_changes_to_chunks(
                         c.with_component_batch(
                             RowId::new(),
                             TimePoint::default().with(timeline, timestamp),
-                            &component,
+                            &*component,
                         )
                     });
                 }
-                continue;
             }
             _ => {
                 // not an entity

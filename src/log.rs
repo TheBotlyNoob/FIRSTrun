@@ -1,13 +1,16 @@
 use std::{collections::BTreeMap, num::TryFromIntError, path::Path};
 
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use rerun::{
     EntityPath,
     external::{arrow::array::ArrayRef, nohash_hasher::IntMap, re_log_types::NonMinI64},
     time::TimeInt,
 };
 
-use crate::values::EntryValue;
+use crate::values::{
+    EntryValue,
+    parse::wpistruct::{UnresolvedWpiLibStructType, WpiLibStructSchema, WpiLibStructType},
+};
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 /// The timestamp of an entry in the log.
@@ -27,6 +30,7 @@ impl TryInto<TimeInt> for Timestamp {
 pub struct EntryLog {
     entries: IntMap<EntityPath, BTreeMap<Timestamp, ArrayRef>>,
     changed: HashSet<(EntityPath, Timestamp)>,
+    struct_map: HashMap<String, WpiLibStructSchema<UnresolvedWpiLibStructType>>,
 }
 
 impl Default for EntryLog {
@@ -41,7 +45,20 @@ impl EntryLog {
         Self {
             entries: IntMap::default(),
             changed: HashSet::new(),
+            struct_map: HashMap::new(),
         }
+    }
+
+    pub fn add_struct(
+        &mut self,
+        name: impl Into<String>,
+        s: WpiLibStructSchema<UnresolvedWpiLibStructType>,
+    ) {
+        self.struct_map.insert(name.into(), s);
+    }
+
+    pub fn resolve_struct(&self, name: &str) -> Option<WpiLibStructSchema<WpiLibStructType>> {
+        self.struct_map.get(name)?.resolve(&self.struct_map)
     }
 
     pub fn add_entry(
