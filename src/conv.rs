@@ -44,8 +44,9 @@ fn retrieve_component(
         )?))
     } else if component == "Point3d" {
         let get = |val: &str| {
+            let key = key.join(&EntityPath::from_single_string(val));
             Ok::<_, anyhow::Error>(
-                log.get_latest_from(&key.join(&EntityPath::from_single_string(val)), timestamp)
+                log.get_latest_from(&key, timestamp)
                     .map(|(_, t)| t.clone())
                     .ok_or_else(|| {
                         anyhow::anyhow!("couldn't find latest value for {key} at {timestamp:?}")
@@ -74,6 +75,8 @@ pub fn log_changes_to_chunks(
     log: &mut EntryLog,
 ) -> Vec<Chunk> {
     let mut entities = IntMap::<EntityPath, ChunkBuilder>::default();
+
+    let changed = log.get_changed();
 
     for (key, timestamp, _val) in log.get_changed() {
         let builder = || Chunk::builder(key.clone());

@@ -1,4 +1,7 @@
-use std::{borrow::Cow, num::NonZeroUsize};
+use std::{
+    borrow::Cow,
+    num::{NonZero, NonZeroUsize},
+};
 
 use hashbrown::HashMap;
 use nom::{
@@ -59,8 +62,8 @@ impl WpiLibStructPrimitives {
         match self {
             Bool | Char | Int8 | Uint8 => 1,
             Int16 | Uint16 => 2,
-            Int32 | Uint32 | Float => 3,
-            Int64 | Uint64 | Double => 4,
+            Int32 | Uint32 | Float => 4,
+            Int64 | Uint64 | Double => 8,
         }
     }
 }
@@ -112,6 +115,13 @@ impl WpiLibStructType {
             Self::Custom(s) => s.datatype(),
         }
     }
+
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Primitive(p) => p.size(),
+            Self::Custom(s) => s.size(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +136,12 @@ pub struct WpiLibStructData<ValueType> {
     pub count: Option<NonZeroUsize>,
     pub value: WpiLibStructValues,
     pub ty: ValueType,
+}
+
+impl WpiLibStructData<WpiLibStructType> {
+    pub fn size(&self) -> usize {
+        self.ty.size() * self.count.map_or(1, NonZero::get)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +162,11 @@ impl WpiLibStructSchema<WpiLibStructType> {
         re_log::info!(?fields);
 
         DataType::Struct(fields)
+    }
+
+    #[must_use]
+    pub fn size(&self) -> usize {
+        self.fields.iter().map(|(_, data)| data.size()).sum()
     }
 }
 
@@ -314,13 +335,13 @@ impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
     pub fn resolve(
         &self,
         struct_map: &HashMap<String, Self>,
-    ) -> Option<WpiLibStructSchema<WpiLibStructType>> {
-        Some(WpiLibStructSchema {
+    ) -> Result<WpiLibStructSchema<WpiLibStructType>, String> {
+        Ok(WpiLibStructSchema {
             fields: self
                 .fields
                 .iter()
                 .map(|(name, data)| {
-                    Some((
+                    Ok::<_, String>((
                         name.clone(),
                         WpiLibStructData {
                             count: data.count.clone(),
@@ -330,15 +351,18 @@ impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
                                     WpiLibStructType::Primitive(p)
                                 }
                                 UnresolvedWpiLibStructType::Custom(ref s) => {
-                                    struct_map.get(s).and_then(|s| {
-                                        Some(WpiLibStructType::Custom(s.resolve(struct_map)?))
-                                    })?
+                                    WpiLibStructType::Custom(
+                                        struct_map
+                                            .get(s)
+                                            .ok_or_else(|| s.clone())?
+                                            .resolve(struct_map)?,
+                                    )
                                 }
                             },
                         },
                     ))
                 })
-                .collect::<Option<HashMap<_, _>>>()?,
+                .collect::<Result<HashMap<_, _>, _>>()?,
         })
     }
 }

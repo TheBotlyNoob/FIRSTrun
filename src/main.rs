@@ -16,18 +16,22 @@ use std::path::Path;
 use conv::log_changes_to_chunks;
 use hashbrown::HashMap;
 
-use log::EntryLog;
+use log::{EntryLog, Timestamp};
 use rerun::external::anyhow::Context;
-use rerun::external::re_log_types::{SetStoreInfo, StoreInfo, StoreSource};
+use rerun::external::nohash_hasher::IntMap;
+use rerun::external::re_log_types::{EntityPathHash, SetStoreInfo, StoreInfo, StoreSource};
 use rerun::log::LogMsg;
-use rerun::{ApplicationId, RecordingProperties};
+use rerun::{ApplicationId, EntityPathPart, RecordingProperties};
 use rerun::{
     DataLoader as _, EntityPath, LoadedData, TimePoint, Timeline,
-    external::{anyhow, re_build_info, re_data_loader, re_log},
+    external::{
+        anyhow::{self, anyhow},
+        re_build_info, re_data_loader, re_log,
+    },
     log::{Chunk, RowId},
 };
 use tokio::runtime::Runtime;
-use values::EntryValue;
+use values::{EntryValue, EntryValueParseError};
 use wpilog::parse::{Payload, WpiLogFile, WpiRecord};
 
 pub mod conv;
@@ -94,10 +98,31 @@ impl re_data_loader::DataLoader for WpiLogLoader {
 }
 
 struct EntryContext<'log> {
-    id: u32,
-    metadata: &'log str,
     ty: &'log str,
     name: &'log str,
+}
+
+fn handle_data(
+    ty: &str,
+    timestamp: Timestamp,
+    key: EntityPath,
+    data: &[u8],
+    logger: &mut EntryLog,
+) {
+    let kstr = key.to_string();
+    let error = |e: anyhow::Error| {
+        re_log::warn!(
+            "handle_data: Failed to parse entry type {} (data length: {}) (key: {}): {e}",
+            ty,
+            data.len(),
+            kstr,
+        );
+    };
+
+    match logger.add_entry(key, timestamp, ty, data) {
+        Ok(_) => {}
+        Err(e) => error(e),
+    }
 }
 
 fn fill_log<'file>(
@@ -121,8 +146,8 @@ fn fill_log<'file>(
             ctxs.insert(
                 entry_id,
                 EntryContext {
-                    id: entry_id,
-                    metadata: entry_metadata,
+                    // NOTE: we _could_ have metadata if we start using it
+                    // metadata: entry_metadata,
                     ty: entry_type,
                     name: entry_name,
                 },
@@ -136,25 +161,7 @@ fn fill_log<'file>(
 
             let key = EntityPath::from_file_path(Path::new(ctx.name));
 
-            let ty = match EntryValue::parse_from_wpilog(
-                ctx.ty,
-                data,
-                key.last().map_or("", rerun::EntityPathPart::unescaped_str),
-                nt_ctx,
-            ) {
-                Ok(ty) => ty,
-                Err(e) => {
-                    re_log::warn!(
-                        "Failed to parse entry type {} (data length: {}) (key: {}): {e}",
-                        ctx.ty,
-                        data.len(),
-                        ctx.name,
-                    );
-                    return;
-                }
-            };
-
-            nt_ctx.add_entry(key, record.timestamp, ty).unwrap();
+            handle_data(ctx.ty, record.timestamp, key, data, nt_ctx);
         }
         _ => (),
     }
