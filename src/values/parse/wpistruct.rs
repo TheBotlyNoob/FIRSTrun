@@ -3,6 +3,8 @@ use std::{
     num::{NonZero, NonZeroUsize},
 };
 
+use anyhow;
+use arrow::datatypes::{DataType, Field, SchemaBuilder};
 use hashbrown::HashMap;
 use indexmap::IndexMap;
 use nom::{
@@ -14,11 +16,6 @@ use nom::{
     error::Error as NomErr,
     multi::many0_count,
     sequence::{delimited, pair},
-};
-use rerun::external::{
-    anyhow::{self},
-    arrow::datatypes::{DataType, Field, SchemaBuilder},
-    re_log,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -1,22 +1,19 @@
 use std::{num::NonZero, sync::Arc};
 
+use ::anyhow::{Context, anyhow, bail};
+use arrow::{
+    array::{
+        ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array, StringArray,
+    },
+    compute::concat,
+    datatypes::DataType,
+};
 use hashbrown::HashMap;
 use parse::wpistruct::{
     UnresolvedWpiLibStructType, WpiLibStructData, WpiLibStructPrimitives, WpiLibStructSchema,
     WpiLibStructType,
 };
-use rerun::external::{
-    anyhow::{self, Context, anyhow, bail},
-    arrow::{
-        array::{
-            ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array,
-            StringArray,
-        },
-        compute::concat,
-        datatypes::DataType,
-    },
-    re_log,
-};
+use re_log;
 
 pub mod parse;
 

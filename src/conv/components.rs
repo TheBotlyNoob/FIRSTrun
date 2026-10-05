@@ -1,16 +1,12 @@
-use rerun::{
-    EntityPath, FromArrow, TimePoint, Timeline,
-    components::{Blob, Position2D, Position3D, Scalar, Text, Vector2D, Vector3D},
-    external::{
-        arrow::{
-            array::{ArrayRef, AsArray, BooleanArray, StringArray},
-            compute::cast,
-            datatypes::{DataType, Utf8Type},
-        },
-        re_chunk::ChunkBuilder,
-    },
-    log::RowId,
+use arrow::{
+    array::{ArrayRef, AsArray, BooleanArray, StringArray},
+    compute::cast,
+    datatypes::{DataType, Utf8Type},
 };
+use re_chunk::{ChunkBuilder, RowId};
+use re_log_types::{EntityPath, TimePoint, Timeline};
+use re_sdk_types::components::{Blob, Position2D, Position3D, Scalar, Text, Vector2D, Vector3D};
+use re_types_core::{ComponentDescriptor, FromArrow};
 
 use crate::log::{EntryLog, Timestamp};
 
@@ -36,7 +32,7 @@ fn latest_number(log: &EntryLog, path: &EntityPath, timestamp: Timestamp) -> Opt
     Some(
         value
             .as_any()
-            .downcast_ref::<rerun::external::arrow::array::Float64Array>()?
+            .downcast_ref::<arrow::array::Float64Array>()?
             .value(0) as f32,
     )
 }
@@ -123,7 +119,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Position2D"),
+                    ComponentDescriptor::partial("rerun.components.Position2D"),
                     &[Position2D::from(value)],
                 ),
             ),
@@ -131,7 +127,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Position3D"),
+                    ComponentDescriptor::partial("rerun.components.Position3D"),
                     &[Position3D::from(value)],
                 ),
             ),
@@ -139,7 +135,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Vector2D"),
+                    ComponentDescriptor::partial("rerun.components.Vector2D"),
                     &[Vector2D::from(value)],
                 ),
             ),
@@ -147,7 +143,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Vector3D"),
+                    ComponentDescriptor::partial("rerun.components.Vector3D"),
                     &[Vector3D::from(value)],
                 ),
             ),
@@ -155,7 +151,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Scalar"),
+                    ComponentDescriptor::partial("rerun.components.Scalar"),
                     &value,
                 ),
             ),
@@ -163,7 +159,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Text"),
+                    ComponentDescriptor::partial("rerun.components.Text"),
                     &value,
                 ),
             ),
@@ -171,7 +167,7 @@ impl NativeComponent {
                 row_id,
                 timepoint,
                 (
-                    rerun::ComponentDescriptor::partial("rerun.components.Blob"),
+                    ComponentDescriptor::partial("rerun.components.Blob"),
                     &value,
                 ),
             ),

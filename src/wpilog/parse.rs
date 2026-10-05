@@ -131,7 +131,7 @@ impl<'log> WpiRecord<'log> {
         let (input, timestamp) = Self::parse_dyn_int(input, lengths.size_timestamp())?;
         let timestamp = log::Timestamp(timestamp);
 
-        let (leftover, input) = bstreaming::take(payload_len)(input)?;
+        let (leftover, input) = bstreaming::take(payload_len as usize)(input)?;
 
         if entry_id == 0 {
             let (input, control_record_type) = nstreaming::u8(input)?;

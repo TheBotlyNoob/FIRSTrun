@@ -1,8 +1,7 @@
-use rerun::{
-    ApplicationId, EntityPath, StoreId, Timeline,
-    external::{nohash_hasher::IntMap, re_chunk::ChunkBuilder, re_log},
-    log::Chunk,
-};
+use nohash_hasher::IntMap;
+use re_chunk::{Chunk, ChunkBuilder};
+use re_log;
+use re_log_types::{ApplicationId, EntityPath, StoreId, Timeline};
 
 use crate::log::EntryLog;
 mod components;

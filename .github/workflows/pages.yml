@@ -1,0 +1,67 @@
+name: Build and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-bindgen
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Build importer
+        run: cargo build --release --lib --target wasm32-unknown-unknown
+      - name: Assemble site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf web/dist
+          mkdir -p web/dist
+          wasm-bindgen \
+            --target web \
+            --out-dir web/dist \
+            target/wasm32-unknown-unknown/release/firstrun.wasm
+          sudo apt-get update
+          sudo apt-get install --yes binaryen
+          wasm-opt \
+            -Oz \
+            --strip-debug \
+            --strip-producers \
+            --vacuum \
+            web/dist/firstrun_bg.wasm \
+            -o web/dist/firstrun_bg.wasm
+          viewer_dir="$(find "$HOME/.cargo/registry/src" -type d -path '*/re_web_viewer_server-0.38.1/web_viewer' -print -quit)"
+          test -n "$viewer_dir"
+          cp "$viewer_dir/re_viewer.js" "$viewer_dir/re_viewer_bg.wasm" web/dist/
+          cp web/index.html web/app.css web/app.js web/dist/
+          touch web/dist/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -5,18 +5,11 @@ use std::{
     sync::Arc,
 };
 
+use arrow::array::{ArrayRef, Int64Array};
 use hashbrown::HashMap;
-use rerun::{
-    EntityPath,
-    external::{
-        anyhow,
-        arrow::array::{ArrayRef, Int64Array},
-        nohash_hasher::IntMap,
-        re_log,
-        re_log_types::NonMinI64,
-    },
-    time::TimeInt,
-};
+use nohash_hasher::IntMap;
+use re_log;
+use re_log_types::{EntityPath, NonMinI64, TimeInt};
 
 use crate::values::{
     EntryValue, EntryValueParseError,

@@ -3,33 +3,53 @@ name = "firstrun"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 anyhow = "1.0.97"
+arrow = { version = "58.4.0", default-features = false }
 bytemuck = { version = "1.25.2", features = ["extern_crate_std"] }
 camino = "1.2.6"
 crossbeam = "0.8.4"
 hashbrown = { version = "0.17.1", features = ["serde"] }
 indexmap = "2.14.2"
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
 nom = "8.0.0"
-nt_client = "0.5.1"
+nohash-hasher = "0.2.0"
 num = "0.4.3"
 pack1 = { version = "1.1.0", features = ["bytemuck"] }
+re_build_info = "0.38.1"
+re_chunk = { version = "0.38.1", default-features = false }
+re_log_encoding = { version = "0.38.1", default-features = false, features = ["encoder"] }
+re_log = "0.38.1"
+re_log_types = { version = "0.38.1", default-features = false }
+re_sdk_types = { version = "0.38.1", default-features = false }
+re_types_core = { version = "0.38.1", default-features = false }
 replace_with = "0.1.8"
-rerun = { version = "0.38.1", features = ["native_viewer", "run"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 strum = { version = "0.28.0", features = ["derive"] }
-tokio = { version = "1.53.2", features = ["rt"] }
+wasm-bindgen = "0.2.126"
 
 [build-dependencies]
 re_build_tools = "0.38.1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nt_client = { version = "0.5.1" }
+rerun = { version = "0.38.1", features = ["native_viewer", "run"] }
+tokio = { version = "1.53.2", default-features = false, features = ["rt"] }
 
 [profile.dev.package."*"]
 opt-level = 3
 
 [profile.release]
 lto = true
-opt-level = 3
+opt-level = "z"
 codegen-units = 1
 incremental = false
 debug = false
+strip = "symbols"
+panic = "abort"
+overflow-checks = false
+debug-assertions = false
