@@ -24,7 +24,7 @@ body {
 .upload {
     position: absolute;
     z-index: 2;
-    top: 0;
+    top: 0.1rem;
     left: 50%;
     transform: translateX(-50%);
     display: inline-flex;

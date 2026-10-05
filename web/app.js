@@ -19,7 +19,7 @@ input.addEventListener("change", async () => {
     try {
         const rrd = import_wpilog(new Uint8Array(await file.arrayBuffer()));
         viewer.send_rrd_to_channel(channelId, rrd);
-        status.textContent = `${file.name} loaded`;
+        status.textContent = ``;
     } catch (error) {
         status.textContent =
             error instanceof Error ? error.message : String(error);
