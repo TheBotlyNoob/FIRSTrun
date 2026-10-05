@@ -1,28 +1,32 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>FIRSTrun WPI Log Viewer</title>
-    <link rel="stylesheet" href="app.css" />
-  </head>
-  <body>
-    <main class="shell">
-      <header class="toolbar">
-        <div>
-          <p class="eyebrow">FIRSTrun</p>
-          <h1>WPI Log Viewer</h1>
-        </div>
-        <label class="upload">
-          <span>Open .wpilog</span>
-          <input id="file-input" type="file" accept=".wpilog,application/octet-stream" />
-        </label>
-      </header>
-      <section class="viewer" aria-label="Rerun viewer">
-        <canvas id="rerun-canvas"></canvas>
-        <p id="status" class="status">Choose a WPI log to begin.</p>
-      </section>
-    </main>
-    <script type="module" src="app.js"></script>
-  </body>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>FIRSTrun WPI Log Viewer</title>
+        <link rel="stylesheet" href="app.css" />
+    </head>
+    <body>
+        <main class="shell">
+            <header class="toolbar">
+                <div>
+                    <p class="eyebrow">FIRSTrun</p>
+                    <h1>WPI Log Viewer</h1>
+                </div>
+                <label class="upload">
+                    <span>Open .wpilog</span>
+                    <input
+                        id="file-input"
+                        type="file"
+                        accept=".wpilog,application/octet-stream"
+                    />
+                </label>
+            </header>
+            <section class="viewer" aria-label="Rerun viewer">
+                <canvas id="rerun-canvas"></canvas>
+                <p id="status" class="status">Choose a WPI log to begin.</p>
+            </section>
+        </main>
+        <script type="module" src="app.js"></script>
+    </body>
 </html>
