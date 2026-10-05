@@ -181,34 +181,17 @@ pub fn identifier(input: &[u8]) -> IResult<&[u8], &[u8]> {
 fn struct_parser(
     data: &[u8],
 ) -> IResult<&[u8], (String, WpiLibStructData<UnresolvedWpiLibStructType>)> {
-    println!("struct parsing");
-    dbg!(String::from_utf8_lossy(data));
-
     let (data, wpienum) = enum_parser(data)
         .map(|(d, h)| (d, Some(h)))
         .unwrap_or((data, None));
 
     let (data, _) = multispace0(data)?;
-
-    dbg!(String::from_utf8_lossy(data));
-
     let (data, typename) = identifier(data)?;
-
-    dbg!(String::from_utf8_lossy(typename));
-
     let (data, _) = multispace1(data)?;
-
-    dbg!(String::from_utf8_lossy(data));
-
-    let (data, identifier_name) = identifier(data).unwrap();
-
-    dbg!(String::from_utf8_lossy(identifier_name));
-
+    let (data, identifier_name) = identifier(data)?;
     let (data, _) = multispace0::<_, nom::error::Error<_>>(data)?;
 
-    dbg!(String::from_utf8_lossy(data));
-
-    let (data, count) = delimited(
+    let (data, count) = match delimited(
         tag("["),
         (
             multispace0::<_, nom::error::Error<_>>,
@@ -217,13 +200,11 @@ fn struct_parser(
         ),
         tag("]"),
     )
-    // TODO: we shouldn't treat zero-sized arrays as a single value,
-    // but what else can we do?
-    .map(|(_, n, _)| NonZeroUsize::new(n))
     .parse(data)
-    .unwrap_or((data, None));
-
-    dbg!(count);
+    {
+        Ok((remaining, (_, n, _))) => (remaining, NonZeroUsize::new(n)),
+        Err(_) => (data, None),
+    };
 
     let name = String::from_utf8_lossy(identifier_name).into_owned();
     let ty = UnresolvedWpiLibStructType::from(String::from_utf8_lossy(typename));
@@ -248,8 +229,6 @@ fn struct_parser(
 }
 
 fn enum_parser(data: &[u8]) -> IResult<&[u8], HashMap<String, i64>> {
-    println!("enum parsing");
-
     let mut values = HashMap::new();
 
     let (data, _) = tag::<_, _, NomErr<_>>("enum")
@@ -257,10 +236,7 @@ fn enum_parser(data: &[u8]) -> IResult<&[u8], HashMap<String, i64>> {
         .unwrap_or((data, &[]));
 
     let (data, _) = multispace0(data)?;
-
     let (mut data, _) = tag("{")(data)?;
-
-    dbg!(String::from_utf8_lossy(data));
 
     loop {
         let (new_data, _) = multispace0::<_, NomErr<_>>(data).unwrap_or((data, &[]));
@@ -270,36 +246,22 @@ fn enum_parser(data: &[u8]) -> IResult<&[u8], HashMap<String, i64>> {
             break;
         }
 
-        dbg!(String::from_utf8_lossy(new_data));
-
         let (new_data, identifier) = identifier(new_data)?;
         let identifier = String::from_utf8_lossy(identifier).into_owned();
 
-        dbg!(&identifier);
-
         let (new_data, _) = multispace0(new_data)?;
-
         let (new_data, _) = tag("=")(new_data)?;
-
         let (new_data, _) = multispace0(new_data)?;
-
         let (new_data, value) = nom::character::complete::i64(new_data)?;
 
-        dbg!(value);
-
         let (new_data, _) = multispace0(new_data)?;
-
         values.insert(identifier, value);
 
-        let (new_data, _) = tag::<_, _, NomErr<_>>(";")(new_data).unwrap_or((new_data, &[]));
-
-        dbg!(String::from_utf8_lossy(new_data));
-
+        let (new_data, _) = tag::<_, _, NomErr<_>>(";")(new_data)
+            .or_else(|_| tag::<_, _, NomErr<_>>(",")(new_data))
+            .unwrap_or((new_data, &[]));
         data = new_data;
     }
-
-    dbg!(&values);
-    dbg!(String::from_utf8_lossy(data));
 
     Ok((data, values))
 }
@@ -314,9 +276,7 @@ impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
                 Err(_) => data,
             };
 
-            println!("Parsing data: {data:?}");
-
-            let Ok((remaining, (name, inner))) = struct_parser(data) else {
+                let Ok((remaining, (name, inner))) = struct_parser(data) else {
                 break;
             };
 
@@ -410,7 +370,7 @@ mod test {
                 WpiLibStructData {
                     count: NonZeroUsize::new(4),
                     value: WpiLibStructValues::Value,
-                    ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Bool)
+                    ty: UnresolvedWpiLibStructType::Primitive(WpiLibStructPrimitives::Double)
                 }
             )])
         );
@@ -463,7 +423,7 @@ mod test {
                 (
                     "number_3".to_string(),
                     WpiLibStructData {
-                        count: None,
+                        count: NonZeroUsize::new(3),
                         value: WpiLibStructValues::Enum(HashMap::from([
                             ("multi".to_string(), 64),
                             ("other".to_string(), 24)

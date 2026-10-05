@@ -15,7 +15,7 @@ use rerun::{
 
 use crate::values::{
     EntryValue, EntryValueParseError,
-    parse::wpistruct::{UnresolvedWpiLibStructType, WpiLibStructSchema, WpiLibStructType},
+    parse::wpistruct::{UnresolvedWpiLibStructType, WpiLibStructSchema},
 };
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]

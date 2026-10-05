@@ -1,7 +1,6 @@
-use std::{fmt::Display, num::NonZero, sync::Arc};
+use std::{num::NonZero, sync::Arc};
 
 use hashbrown::HashMap;
-use nom::{Finish as _, IResult};
 use parse::wpistruct::{
     UnresolvedWpiLibStructType, WpiLibStructData, WpiLibStructPrimitives, WpiLibStructSchema,
     WpiLibStructType,
@@ -10,15 +9,13 @@ use rerun::external::{
     anyhow::{self, Context, anyhow, bail},
     arrow::{
         array::{
-            ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array, NullArray,
-            StringArray, StructArray,
+            ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array,
+            StringArray,
         },
         datatypes::DataType,
     },
     re_log,
 };
-
-use crate::log::EntryLog;
 
 pub mod parse;
 
@@ -109,7 +106,7 @@ impl EntryValue {
                                 .map_err(|s| EntryValueParseError::StructNotFound(s))
                         })?;
 
-                    dbg!(Self::parse_from_struct(data, resolved, is_array)?)
+                    Self::parse_from_struct(data, resolved, is_array)?
                 } else {
                     return Err(
                         anyhow!("unknown data type {ty} (data length: {})", data.len()).into(),
@@ -204,7 +201,6 @@ impl EntryValue {
                     .map(|d| {
                         let (data, this) = Self::parse_from_struct_single(d, &schema)?;
 
-                        dbg!(&this);
                         debug_assert_eq!(data.len(), 0);
 
                         Ok::<_, anyhow::Error>(this)

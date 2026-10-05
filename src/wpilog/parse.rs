@@ -250,7 +250,7 @@ impl<'log> WpiLogFile<'log> {
     pub fn parse(
         input: &'log [u8],
         mut record_cb: impl FnMut(WpiRecord<'log>),
-    ) -> IResult<&[u8], Self, ParseError> {
+    ) -> IResult<&'log [u8], Self, ParseError> {
         let (input, (version, extra_header)) = Self::parse_header(input)?;
 
         let (input, records) =
@@ -638,7 +638,6 @@ mod tests {
                 entry_metadata: r#"{"source":"log"}"#,
             }
         );
-        dbg!(&wpi_log.records);
         assert_eq!(wpi_log.records[1].timestamp.0, 1_000_050);
         assert_eq!(
             wpi_log.records[1].payload,

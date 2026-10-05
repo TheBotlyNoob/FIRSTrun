@@ -18,20 +18,13 @@ use hashbrown::HashMap;
 
 use log::{EntryLog, Timestamp};
 use rerun::external::anyhow::Context;
-use rerun::external::nohash_hasher::IntMap;
-use rerun::external::re_log_types::{EntityPathHash, SetStoreInfo, StoreInfo, StoreSource};
-use rerun::log::LogMsg;
-use rerun::{ApplicationId, EntityPathPart, RecordingProperties};
+use rerun::external::re_log_types::{SetStoreInfo, StoreInfo, StoreSource};
 use rerun::{
-    DataLoader as _, EntityPath, LoadedData, TimePoint, Timeline,
-    external::{
-        anyhow::{self, anyhow},
-        re_build_info, re_data_loader, re_log,
-    },
-    log::{Chunk, RowId},
+    ApplicationId, EntityPath, ImportedData, Importer, ImporterError, ImporterSettings, Timeline,
+    external::{re_build_info, re_importer, re_log},
+    log::{LogMsg, RowId},
 };
 use tokio::runtime::Runtime;
-use values::{EntryValue, EntryValueParseError};
 use wpilog::parse::{Payload, WpiLogFile, WpiRecord};
 
 pub mod conv;
@@ -53,7 +46,7 @@ fn main() -> anyhow::Result<std::process::ExitCode> {
     let main_thread_token = rerun::MainThreadToken::i_promise_i_am_on_the_main_thread();
     re_log::setup_logging();
 
-    re_data_loader::register_custom_data_loader(WpiLogLoader);
+    re_importer::register_custom_importer(WpiLogLoader);
 
     let build_info = re_build_info::build_info!();
     rerun::run(
@@ -65,34 +58,34 @@ fn main() -> anyhow::Result<std::process::ExitCode> {
     .map(std::process::ExitCode::from)
 }
 
-/// A custom [`re_data_loader::DataLoader`] that logs the hash of file as a [`rerun::TextDocument`].
+/// A custom importer for WPI log files.
 struct WpiLogLoader;
 
-impl re_data_loader::DataLoader for WpiLogLoader {
+impl Importer for WpiLogLoader {
     fn name(&self) -> String {
-        "rerun.data_loaders.frc.WpiLog".into()
+        "rerun.importers.frc.WpiLog".into()
     }
 
-    fn load_from_path(
+    fn import_from_path(
         &self,
-        settings: &rerun::external::re_data_loader::DataLoaderSettings,
+        settings: &ImporterSettings,
         path: std::path::PathBuf,
-        tx: std::sync::mpsc::Sender<re_data_loader::LoadedData>,
-    ) -> Result<(), re_data_loader::DataLoaderError> {
+        tx: crossbeam::channel::Sender<ImportedData>,
+    ) -> Result<(), ImporterError> {
         let contents = std::fs::read(&path)?;
         if path.is_dir() {
-            return Err(re_data_loader::DataLoaderError::Incompatible(path)); // simply not interested
+            return Err(ImporterError::Incompatible(path));
         }
         parse_and_log(settings, &tx, &path, &contents)
     }
 
-    fn load_from_file_contents(
+    fn import_from_file_contents(
         &self,
-        settings: &rerun::external::re_data_loader::DataLoaderSettings,
+        settings: &ImporterSettings,
         filepath: std::path::PathBuf,
         contents: std::borrow::Cow<'_, [u8]>,
-        tx: std::sync::mpsc::Sender<re_data_loader::LoadedData>,
-    ) -> Result<(), re_data_loader::DataLoaderError> {
+        tx: crossbeam::channel::Sender<ImportedData>,
+    ) -> Result<(), ImporterError> {
         parse_and_log(settings, &tx, &filepath, &contents)
     }
 }
@@ -135,7 +128,7 @@ fn fill_log<'file>(
             entry_id,
             entry_name,
             entry_type,
-            entry_metadata,
+            entry_metadata: _,
         } => {
             // strip the NT: prefix from the entry name
             let mut entry_name = entry_name.strip_prefix("NT:").unwrap_or(entry_name);
@@ -168,52 +161,24 @@ fn fill_log<'file>(
 }
 
 fn parse_and_log(
-    settings: &rerun::external::re_data_loader::DataLoaderSettings,
-    tx: &std::sync::mpsc::Sender<re_data_loader::LoadedData>,
+    settings: &ImporterSettings,
+    tx: &crossbeam::channel::Sender<ImportedData>,
     filepath: &std::path::Path,
     contents: &[u8],
-) -> Result<(), re_data_loader::DataLoaderError> {
+) -> Result<(), ImporterError> {
     if !WpiLogFile::is_wpilog(contents) {
-        return Err(re_data_loader::DataLoaderError::Incompatible(
-            filepath.to_owned(),
-        ));
+        return Err(ImporterError::Incompatible(filepath.to_owned()));
     }
 
-    let store_id = settings
-        .opened_store_id
-        .clone()
-        .unwrap_or_else(|| settings.store_id.clone());
+    let store_id = settings.opened_store_id_or_recommended();
 
-    let _ = tx.send(LoadedData::LogMsg(
+    let _ = tx.send(ImportedData::LogMsg(
         WpiLogLoader::name(&WpiLogLoader),
         LogMsg::SetStoreInfo(SetStoreInfo {
             row_id: *RowId::new(),
-            info: StoreInfo {
-                // TODO: specify an application_id
-                application_id: settings
-                    .application_id
-                    .clone()
-                    .unwrap_or_else(ApplicationId::random),
-                store_id: store_id.clone(),
-                cloned_from: None,
-                store_source: StoreSource::Other("WpiLog".into()),
-                store_version: None,
-            },
+            info: StoreInfo::new(store_id.clone(), StoreSource::Other("WpiLog".into())),
         }),
     ));
-
-    let properties = RecordingProperties::new().with_name("WpiLog");
-
-    let recording_props = Chunk::builder(EntityPath::recording_properties())
-        .with_archetype(RowId::new(), TimePoint::default(), &properties)
-        .build()?;
-
-    tx.send(LoadedData::Chunk(
-        WpiLogLoader::name(&WpiLogLoader),
-        store_id,
-        recording_props,
-    ))
-    .unwrap();
 
     let timeline = Timeline::new_duration("robotime");
 
@@ -236,21 +201,22 @@ fn parse_and_log(
                 })
                 .map_err(|e| {
                     re_log::error!("WPI DataLog file error: {e}");
-                    re_data_loader::DataLoaderError::Other(e.into())
+                    ImporterError::Other(e.into())
                 })
                 .unwrap();
 
                 for chunk in log_changes_to_chunks(
-                    &settings.store_id,
+                    &store_id,
                     &settings
                         .application_id
+                        .clone()
                         .unwrap_or_else(ApplicationId::random),
                     timeline,
                     &mut nt_ctx,
                 ) {
-                    tx.send(LoadedData::Chunk(
+                    tx.send(ImportedData::Chunk(
                         WpiLogLoader::name(&WpiLogLoader),
-                        settings.store_id.clone(),
+                        store_id.clone(),
                         chunk,
                     ))
                     .unwrap();
