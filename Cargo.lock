@@ -3380,6 +3380,7 @@ dependencies = [
  "camino",
  "crossbeam",
  "hashbrown 0.17.1",
+ "indexmap 2.14.2",
  "nom",
  "nt_client",
  "num",

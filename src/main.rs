@@ -11,7 +11,7 @@
 
 pub mod wpilog;
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use conv::log_changes_to_chunks;
 use hashbrown::HashMap;
@@ -33,6 +33,8 @@ pub mod nt;
 pub mod values;
 
 fn main() -> anyhow::Result<std::process::ExitCode> {
+    spawn_debug_vector3d()?;
+
     std::thread::Builder::new()
         .name("networktables".into())
         .spawn(|| {
@@ -56,6 +58,40 @@ fn main() -> anyhow::Result<std::process::ExitCode> {
         std::env::args(),
     )
     .map(std::process::ExitCode::from)
+}
+
+fn spawn_debug_vector3d() -> anyhow::Result<()> {
+    std::thread::Builder::new()
+        .name("debug-vector3d".into())
+        .spawn(|| {
+            let recording =
+                match rerun::RecordingStreamBuilder::new("FIRSTrun Vector3D debug").spawn() {
+                    Ok(recording) => recording,
+                    Err(error) => {
+                        re_log::warn!("unable to start Vector3D debug recording: {error}");
+                        return;
+                    }
+                };
+
+            for frame in 0..600_i64 {
+                let phase = frame as f32 * 0.08;
+                recording.set_time_sequence("debug_frame", frame);
+                let vector = rerun::components::Vector3D::from([
+                    phase.sin(),
+                    phase.cos(),
+                    (phase * 0.5).sin(),
+                ]);
+                let arrow = rerun::Arrows3D::update_fields().with_vectors([vector]);
+
+                if let Err(error) = recording.log("debug/moving_vector3d", &arrow) {
+                    re_log::warn!("Vector3D debug recording stopped: {error}");
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(33));
+            }
+        })?;
+
+    Ok(())
 }
 
 /// A custom importer for WPI log files.

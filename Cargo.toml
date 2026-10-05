@@ -9,6 +9,7 @@ bytemuck = { version = "1.25.2", features = ["extern_crate_std"] }
 camino = "1.2.6"
 crossbeam = "0.8.4"
 hashbrown = { version = "0.17.1", features = ["serde"] }
+indexmap = "2.14.2"
 nom = "8.0.0"
 nt_client = "0.5.1"
 num = "0.4.3"

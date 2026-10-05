@@ -12,6 +12,7 @@ use rerun::external::{
             ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int64Array,
             StringArray,
         },
+        compute::concat,
         datatypes::DataType,
     },
     re_log,
@@ -122,14 +123,25 @@ impl EntryValue {
         ty: DataType,
     ) -> Result<EntryValue, EntryValueParseError> {
         if is_array {
-            // TODO: handle strings
             let size = Self::datatype_size(ty.clone())
                 .ok_or_else(|| anyhow!("datatype {ty} cannot be used as an array"))?;
-            let array = data
-                .windows(size)
+            let chunks = data.chunks_exact(size);
+            if !chunks.remainder().is_empty() {
+                return Err(anyhow!(
+                    "array payload has {} trailing bytes for {ty}",
+                    chunks.remainder().len()
+                )
+                .into());
+            }
+            let arrays = data
+                .chunks_exact(size)
                 .map(|d| Self::parse_datatype_single(d, ty.clone()))
                 .collect::<Result<_, _>>()?;
-            Ok(EntryValue::ArrayArrow(array))
+            let arrays: Vec<ArrayRef> = arrays;
+            let arrays = arrays.iter().map(|array| &**array).collect::<Vec<_>>();
+            Ok(EntryValue::Arrow(
+                concat(&arrays).map_err(anyhow::Error::from)?,
+            ))
         } else {
             let array = Self::parse_datatype_single(data, ty)?;
             Ok(EntryValue::Arrow(array))
@@ -196,20 +208,30 @@ impl EntryValue {
                 schema.size(),
                 data.len() as f32 / schema.size() as f32
             );
+            if schema.size() == 0 {
+                bail!("cannot parse an array of zero-sized structs");
+            }
+            let mut chunks = data.chunks_exact(schema.size());
+            if !chunks.remainder().is_empty() {
+                bail!(
+                    "struct array payload has {} trailing bytes",
+                    chunks.remainder().len()
+                );
+            }
             EntryValue::ArrayMap(
-                data.windows(schema.size())
+                chunks
+                    .by_ref()
                     .map(|d| {
-                        let (data, this) = Self::parse_from_struct_single(d, &schema)?;
-
-                        debug_assert_eq!(data.len(), 0);
-
+                        let (remaining, this) = Self::parse_from_struct_single(d, &schema)?;
+                        anyhow::ensure!(remaining.is_empty(), "struct parser left bytes");
                         Ok::<_, anyhow::Error>(this)
                     })
-                    .collect::<Result<Vec<_>, _>>()
-                    .unwrap(),
+                    .collect::<Result<Vec<_>, _>>()?,
             )
         } else {
-            EntryValue::Map(Self::parse_from_struct_single(data, &schema)?.1)
+            let (remaining, value) = Self::parse_from_struct_single(data, &schema)?;
+            anyhow::ensure!(remaining.is_empty(), "struct payload has trailing bytes");
+            EntryValue::Map(value)
         };
 
         Ok(value)
@@ -254,5 +276,107 @@ impl EntryValue {
         let value = Self::parse_datatype(value, field.count.is_some(), ty.datatype())?;
 
         Ok((data, value))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EntryValue;
+    use hashbrown::HashMap;
+    use rerun::external::arrow::array::{Float64Array, Int64Array};
+
+    #[test]
+    fn parses_fixed_width_arrays_without_overlapping_elements() {
+        let value = EntryValue::parse_from_wpilog(
+            "int64[]",
+            &[
+                1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
+            ],
+            &HashMap::new(),
+        )
+        .unwrap();
+
+        let EntryValue::Arrow(value) = value else {
+            panic!("expected one Arrow array");
+        };
+        let values = value.as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(values.len(), 3);
+        assert_eq!(values.value(0), 1);
+        assert_eq!(values.value(1), 2);
+        assert_eq!(values.value(2), 3);
+    }
+
+    #[test]
+    fn rejects_partial_fixed_width_array_payloads() {
+        assert!(EntryValue::parse_from_wpilog("int64[]", &[1, 2, 3], &HashMap::new()).is_err());
+    }
+
+    #[test]
+    fn decodes_struct_fields_in_schema_order() {
+        let schema =
+            super::parse::wpistruct::WpiLibStructSchema::parse(b"double x; double y;").unwrap();
+        let mut structs = HashMap::new();
+        structs.insert("struct:Translation2d".to_string(), schema);
+
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&1.25f64.to_le_bytes());
+        payload.extend_from_slice(&(-2.5f64).to_le_bytes());
+
+        let value =
+            EntryValue::parse_from_wpilog("struct:Translation2d", &payload, &structs).unwrap();
+        let EntryValue::Map(fields) = value else {
+            panic!("expected a struct field map");
+        };
+        let EntryValue::Arrow(x) = fields.get("x").unwrap() else {
+            panic!("expected x to be an Arrow value");
+        };
+        let EntryValue::Arrow(y) = fields.get("y").unwrap() else {
+            panic!("expected y to be an Arrow value");
+        };
+        assert_eq!(
+            x.as_any().downcast_ref::<Float64Array>().unwrap().value(0),
+            1.25
+        );
+        assert_eq!(
+            y.as_any().downcast_ref::<Float64Array>().unwrap().value(0),
+            -2.5
+        );
+    }
+
+    #[test]
+    fn decodes_struct_arrays_into_ordered_indexed_maps() {
+        let schema =
+            super::parse::wpistruct::WpiLibStructSchema::parse(b"double x; double y;").unwrap();
+        let mut structs = HashMap::new();
+        structs.insert("struct:Translation2d".to_string(), schema);
+
+        let mut payload = Vec::new();
+        for (x, y) in [(1.0f64, 2.0f64), (3.0f64, 4.0f64)] {
+            payload.extend_from_slice(&x.to_le_bytes());
+            payload.extend_from_slice(&y.to_le_bytes());
+        }
+
+        let value =
+            EntryValue::parse_from_wpilog("struct:Translation2d[]", &payload, &structs).unwrap();
+        let EntryValue::ArrayMap(elements) = value else {
+            panic!("expected an array of struct maps");
+        };
+        assert_eq!(elements.len(), 2);
+        for (element, expected) in elements.iter().zip([(1.0, 2.0), (3.0, 4.0)]) {
+            let EntryValue::Arrow(x) = element.get("x").unwrap() else {
+                panic!("expected x to be an Arrow value");
+            };
+            let EntryValue::Arrow(y) = element.get("y").unwrap() else {
+                panic!("expected y to be an Arrow value");
+            };
+            assert_eq!(
+                x.as_any().downcast_ref::<Float64Array>().unwrap().value(0),
+                expected.0
+            );
+            assert_eq!(
+                y.as_any().downcast_ref::<Float64Array>().unwrap().value(0),
+                expected.1
+            );
+        }
     }
 }

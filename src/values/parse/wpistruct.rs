@@ -4,6 +4,7 @@ use std::{
 };
 
 use hashbrown::HashMap;
+use indexmap::IndexMap;
 use nom::{
     IResult, Parser,
     branch::alt,
@@ -146,7 +147,7 @@ impl WpiLibStructData<WpiLibStructType> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WpiLibStructSchema<ValueType> {
-    pub fields: HashMap<String, WpiLibStructData<ValueType>>,
+    pub fields: IndexMap<String, WpiLibStructData<ValueType>>,
 }
 
 impl WpiLibStructSchema<WpiLibStructType> {
@@ -268,7 +269,7 @@ fn enum_parser(data: &[u8]) -> IResult<&[u8], HashMap<String, i64>> {
 
 impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
     pub fn parse(mut data: &[u8]) -> Result<Self, anyhow::Error> {
-        let mut fields = HashMap::new();
+        let mut fields = IndexMap::new();
 
         loop {
             data = match multispace0::<_, nom::error::Error<_>>(data) {
@@ -276,7 +277,7 @@ impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
                 Err(_) => data,
             };
 
-                let Ok((remaining, (name, inner))) = struct_parser(data) else {
+            let Ok((remaining, (name, inner))) = struct_parser(data) else {
                 break;
             };
 
@@ -322,7 +323,7 @@ impl WpiLibStructSchema<UnresolvedWpiLibStructType> {
                         },
                     ))
                 })
-                .collect::<Result<HashMap<_, _>, _>>()?,
+                .collect::<Result<IndexMap<_, _>, _>>()?,
         })
     }
 }
@@ -337,6 +338,7 @@ mod test {
 
     use super::WpiLibStructSchema;
     use hashbrown::HashMap;
+    use indexmap::IndexMap;
 
     #[test]
     fn basic_struct() {
@@ -346,7 +348,7 @@ mod test {
 
         assert_eq!(
             wpistruct.fields,
-            HashMap::from([(
+            IndexMap::from([(
                 "value".to_string(),
                 WpiLibStructData {
                     count: None,
@@ -365,7 +367,7 @@ mod test {
 
         assert_eq!(
             wpistruct.fields,
-            HashMap::from([(
+            IndexMap::from([(
                 "arr".to_string(),
                 WpiLibStructData {
                     count: NonZeroUsize::new(4),
@@ -384,7 +386,7 @@ mod test {
 
         assert_eq!(
             wpistruct.fields,
-            HashMap::from([(
+            IndexMap::from([(
                 "val".to_string(),
                 WpiLibStructData {
                     count: None,
@@ -403,7 +405,7 @@ mod test {
 
         assert_eq!(
             wpistruct.fields,
-            HashMap::from([
+            IndexMap::from([
                 (
                     "something".to_string(),
                     WpiLibStructData {
