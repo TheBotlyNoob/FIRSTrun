@@ -42,6 +42,8 @@ jobs:
                   sudo apt-get install --yes binaryen
                   wasm-opt \
                     -Oz \
+                    --enable-bulk-memory \
+                    --enable-sign-ext \
                     --strip-debug \
                     --strip-producers \
                     --vacuum \
