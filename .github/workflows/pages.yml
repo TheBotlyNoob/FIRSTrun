@@ -43,7 +43,10 @@ jobs:
                   wasm-opt \
                     -Oz \
                     --enable-bulk-memory \
-                    --enable-nontrapping-f2i \
+                    --enable-nontrapping-float-to-int \
+                    --enable-threads \
+                    --enable-multivalue \
+                    --enable-reference-types \
                     --enable-sign-ext \
                     --strip-debug \
                     --strip-producers \
