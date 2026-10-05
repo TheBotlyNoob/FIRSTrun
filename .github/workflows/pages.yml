@@ -25,7 +25,23 @@ jobs:
                   target: wasm32-unknown-unknown
             - uses: Swatinem/rust-cache@v2
             - name: Install wasm-bindgen
-              run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  version="0.2.126"
+                  archive="wasm-bindgen-${version}-x86_64-unknown-linux-musl.tar.gz"
+                  download="${RUNNER_TEMP}/${archive}"
+                  extract="${RUNNER_TEMP}/wasm-bindgen"
+                  mkdir -p "$extract" "$HOME/.local/bin"
+                  curl --fail --location --retry 3 \
+                    "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}/${archive}" \
+                    --output "$download"
+                  tar -xzf "$download" -C "$extract"
+                  install \
+                    "$extract/wasm-bindgen-${version}-x86_64-unknown-linux-musl/wasm-bindgen" \
+                    "$HOME/.local/bin/wasm-bindgen"
+                  echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+                  "$HOME/.local/bin/wasm-bindgen" --version
             - name: Build importer
               run: cargo build --release --lib --target wasm32-unknown-unknown
             - name: Assemble site

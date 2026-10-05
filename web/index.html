@@ -8,11 +8,7 @@
     </head>
     <body>
         <main class="shell">
-            <header class="toolbar">
-                <div>
-                    <p class="eyebrow">FIRSTrun</p>
-                    <h1>WPI Log Viewer</h1>
-                </div>
+            <section class="viewer" aria-label="Rerun viewer">
                 <label class="upload">
                     <span>Open .wpilog</span>
                     <input
@@ -21,8 +17,6 @@
                         accept=".wpilog,application/octet-stream"
                     />
                 </label>
-            </header>
-            <section class="viewer" aria-label="Rerun viewer">
                 <canvas id="rerun-canvas"></canvas>
                 <p id="status" class="status">Choose a WPI log to begin.</p>
             </section>
