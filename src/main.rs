@@ -33,8 +33,6 @@ pub mod nt;
 pub mod values;
 
 fn main() -> anyhow::Result<std::process::ExitCode> {
-    spawn_debug_vector3d()?;
-
     std::thread::Builder::new()
         .name("networktables".into())
         .spawn(|| {
@@ -76,20 +74,25 @@ fn spawn_debug_vector3d() -> anyhow::Result<()> {
             for frame in 0..600_i64 {
                 let phase = frame as f32 * 0.08;
                 recording.set_time_sequence("debug_frame", frame);
-                let vector = rerun::components::Vector3D::from([
-                    phase.sin(),
-                    phase.cos(),
-                    (phase * 0.5).sin(),
+                let vector = rerun::archetypes::Points3D::new([
+                    (phase.cos(), phase.sin(), 0.0),
+                    (0.0, 0.0, 1.0),
+                ])
+                .with_radii([0.05, 0.1])
+                .with_colors([
+                    rerun::components::Color::from_rgb(255, 0, 0),
+                    rerun::components::Color::from_rgb(0, 255, 0),
                 ]);
-                let arrow = rerun::Arrows3D::update_fields().with_vectors([vector]);
 
-                if let Err(error) = recording.log("debug/moving_vector3d", &arrow) {
+                if let Err(error) = recording.log("debug/moving_vector3d", &vector) {
                     re_log::warn!("Vector3D debug recording stopped: {error}");
                     return;
                 }
                 std::thread::sleep(Duration::from_millis(33));
             }
-        })?;
+        })?
+        .join()
+        .unwrap();
 
     Ok(())
 }

@@ -1,6 +1,5 @@
 :root {
     color-scheme: dark;
-    font-family: Georgia, "Times New Roman", serif;
     background: #11151b;
     color: #f4efe5;
 }
@@ -12,9 +11,6 @@ html,
 body {
     margin: 0;
     min-height: 100%;
-}
-body {
-    background: radial-gradient(circle at top left, #28313c 0, #11151b 42rem);
 }
 .shell {
     min-height: 100vh;
@@ -56,19 +52,4 @@ canvas {
     width: 100%;
     height: 100%;
     min-height: 100vh;
-}
-.status {
-    position: absolute;
-    inset: 50% 1rem auto;
-    margin: 0;
-    color: #aeb8c4;
-    text-align: center;
-    font-size: 1.1rem;
-    pointer-events: none;
-}
-@media (max-width: 600px) {
-    .upload {
-        top: 0.5rem;
-        white-space: nowrap;
-    }
 }
