@@ -6,7 +6,7 @@ const canvas = document.querySelector("#rerun-canvas");
 const status = document.querySelector("#status");
 const channelId = "firstrun-wpilog";
 
-await Promise.all([initImporter(), initViewer()]);
+await Promise.all([initImporter(), initViewer("./re_viewer_bg.wasm")]);
 const viewer = new WebHandle({ persistState: true });
 await viewer.start(canvas);
 viewer.open_channel(channelId, "FIRSTrun WPI log");
