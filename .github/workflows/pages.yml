@@ -42,6 +42,7 @@ jobs:
                   sudo apt-get install --yes binaryen
                   wasm-opt \
                     -Oz \
+                    --enable-simd \
                     --enable-bulk-memory \
                     --enable-nontrapping-float-to-int \
                     --enable-threads \
@@ -56,6 +57,10 @@ jobs:
                   viewer_dir="$(find "$HOME/.cargo/registry/src" -type d -path '*/re_web_viewer_server-0.38.1/web_viewer' -print -quit)"
                   test -n "$viewer_dir"
                   cp "$viewer_dir/re_viewer.js" "$viewer_dir/re_viewer_bg.wasm" web/dist/
+                  cat >> web/dist/re_viewer.js <<'EOF'
+                  export default wasm_bindgen;
+                  export const { WebHandle } = wasm_bindgen;
+                  EOF
                   cp web/index.html web/app.css web/app.js web/dist/
                   touch web/dist/.nojekyll
             - uses: actions/upload-pages-artifact@v3
