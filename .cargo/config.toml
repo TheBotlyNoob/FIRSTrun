@@ -7,6 +7,9 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld.exe"
 
+[profile.dev]
+codegen-backend = "cranelift"
+
 # `web_sys_unstable_apis` is required to enable the web_sys clipboard API which egui_web uses.
 # https://wasm-bindgen.github.io/wasm-bindgen/api/web_sys/struct.Clipboard.html
 # https://rustwasm.github.io/docs/wasm-bindgen/web-sys/unstable-apis.html
@@ -35,3 +38,6 @@ rustflags = [
     '--cfg=getrandom_backend="wasm_js"',
     '-Ctarget-feature=+simd128,+bulk-memory,+nontrapping-fptoint,+multivalue',
 ]
+
+[alias]
+xtask = "run --package xtask --"

@@ -6548,6 +6548,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
+name = "prettyplease"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
+dependencies = [
+ "proc-macro2",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8765,6 +8775,65 @@ dependencies = [
  "serde",
  "thiserror 2.0.21",
  "web-time",
+]
+
+[[package]]
+name = "re_type_definitions"
+version = "0.38.1"
+source = "git+https://github.com/rerun-io/rerun.git?tag=0.38.1#b08c599e934b0dedee1e95fd74a989a1582ce3d5"
+dependencies = [
+ "re_types_builder_prelude",
+]
+
+[[package]]
+name = "re_types_builder"
+version = "0.38.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c410625ebb3f938daebdfcc4ceebd63b1010eebf11e50e8bf52a61c2a9bebe"
+dependencies = [
+ "anyhow",
+ "camino",
+ "colored",
+ "crossbeam",
+ "indent",
+ "itertools 0.15.0",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "rayon",
+ "re_build_tools",
+ "re_case",
+ "re_error",
+ "re_log",
+ "re_quota_channel",
+ "re_tracing",
+ "regex-lite",
+ "serde",
+ "strum 0.26.3",
+ "syn 3.0.6",
+ "tempfile",
+ "toml",
+ "unindent",
+ "walkdir",
+]
+
+[[package]]
+name = "re_types_builder_macros"
+version = "0.38.1"
+source = "git+https://github.com/rerun-io/rerun.git?tag=0.38.1#b08c599e934b0dedee1e95fd74a989a1582ce3d5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "re_types_builder_prelude"
+version = "0.38.1"
+source = "git+https://github.com/rerun-io/rerun.git?tag=0.38.1#b08c599e934b0dedee1e95fd74a989a1582ce3d5"
+dependencies = [
+ "half",
+ "re_types_builder_macros",
 ]
 
 [[package]]
@@ -11130,10 +11199,12 @@ version = "1.1.6+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "920602543f0911ab71da12c50d59701da54c196d1a2bf5cb4b75667f137a406a"
 dependencies = [
+ "indexmap 2.14.2",
  "serde_core",
  "serde_spanned",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
@@ -11166,6 +11237,12 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.2+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tonic"
@@ -12657,6 +12734,19 @@ name = "xmlwriter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
+
+[[package]]
+name = "xtask"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "camino",
+ "cargo_metadata",
+ "re_type_definitions",
+ "re_types_builder",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "xxhash-rust"
